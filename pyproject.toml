@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mimir"
+version = "0.1.0"
+description = "MIMIR: observation-driven behavioral intelligence (MVP first boundary: observe, learn, infer)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+dependencies = []
+
+[project.optional-dependencies]
+# Embodiment hardware: live cursor/keys (pyautogui, pynput), visor (PyQt6),
+# neural speech (edge-tts, needs network), local STT (whisper + mic).
+# Everything else, including the full test suite, runs on the stdlib.
+cobot = [
+  "pyautogui>=0.9.0",
+  "pynput>=1.7.0",
+  "PyQt6>=6.6.0",
+  "edge-tts>=6.1.0",
+  "openai-whisper>=20250625",
+  "SpeechRecognition>=3.10.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["mimir*"]
