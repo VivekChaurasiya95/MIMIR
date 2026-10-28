@@ -1,0 +1,225 @@
+Metadata-Version: 2.4
+Name: mimir
+Version: 0.1.0
+Summary: MIMIR: observation-driven behavioral intelligence (MVP first boundary: observe, learn, infer)
+License: Apache-2.0
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Provides-Extra: cobot
+Requires-Dist: pyautogui>=0.9.0; extra == "cobot"
+Requires-Dist: pynput>=1.7.0; extra == "cobot"
+Requires-Dist: PyQt6>=6.6.0; extra == "cobot"
+Requires-Dist: edge-tts>=6.1.0; extra == "cobot"
+Requires-Dist: openai-whisper>=20250625; extra == "cobot"
+Requires-Dist: SpeechRecognition>=3.10.0; extra == "cobot"
+Dynamic: license-file
+
+# MIMIR: Observation-Driven Behavioral Intelligence
+> **The Digital Collaborative Robot (Digital Cobot)**  
+> *Core Principle: Observe. Infer. Learn. Replicate.*
+
+---
+
+## 1. Executive Overview
+
+**MIMIR** is an observation-driven behavioral intelligence system designed to learn how humans and software systems operate in real environments.
+
+Rather than relying on explicit prompt engineering, hardcoded rules, or brittle workflow recording, MIMIR develops an understanding of behavior by passively observing actions, decisions, contextual diffs, error recoveries, and operational cadences over time. Its mission is to transform observed human behavior into a persistent, reusable, and inspectable **Behavioral Model** that can generalize and execute tasks in previously unseen situations.
+
+MIMIR is not a chatbot in a browser tab. It is not an IDE autocompletion plugin. It is not a robotic process automation (RPA) macro recorder.
+
+**MIMIR is a Digital Collaborative Robot (Digital Cobot)**. Inspired by the principles of **Gen 2.5 robotics** (embodied learning, imitation policies, compliant control, and intuitive physical presence), MIMIR brings the robotic revolution directly onto the personal computer desktop.
+
+```
+Conventional Computing (Instructional):
+[Human] ─────(Explicit Prompt / Manual Script)─────► [Machine] ─────► [Generic Output]
+
+The MIMIR Paradigm (Observational):
+[Human at Work] ──(Passive Telemetry)──► [MIMIR: Inductive Inference] ──► [Behavioral Principle Bank]
+                                                                                     │
+                                                                                     ▼ (steers)
+[Unfamiliar Novel Task] ───────────────► [Base Foundation LLM] ───────────────► [Replicated Action]
+                                               ▲
+                                               │ (Physical Actuation & Voice)
+                                    [Compliant Cursor & Screen Agency]
+```
+
+---
+
+## 2. The Core Problem: The Limits of Instructional Computing
+
+For decades, software has forced humans to instruct every single action explicitly:
+
+1. **The Prompt Fatigue & "Average Intelligence" Trap:** Current AI assistants rely on exhaustive prompts and system instructions, producing the statistical median of the internet rather than honoring an engineer's or craftsperson's individual standards, naming quirks, and architectural instincts.
+2. **The Loss of Tacit Knowledge:** Over 80% of real engineering wisdom is tacit—instincts about error handling, boundary isolation, and triage patterns that are never written down in wikis or style guides. When senior practitioners leave, their operational DNA disappears.
+3. **The "Sim-to-Real" Execution Gap:** Modern AI generates advice in a chatbox, but the human remains the mechanical laborer—copying text, staging files, executing terminal commands, clicking UI elements, and fixing conflicts.
+4. **Brittle Automation:** Traditional RPA scripts replay fixed sequences and break the moment a pixel shifts, a network latency changes, or an unexpected dialog appears.
+
+MIMIR solves this by shifting software from **Instructional Computing** to **Observational Computing**.
+
+---
+
+## 3. Foundational Architecture
+
+MIMIR’s cognitive and operational architecture is structured into five cohesive pillars:
+
+```mermaid
+flowchart TD
+    subgraph Layer1["1. Sensory & Observation Layer"]
+        A[Passive Telemetry: Git Diffs, Terminal, IDE Events] --> B[Privacy Redaction & Sensitive Filter]
+    end
+
+    subgraph Layer2["2. Parallel Perception & Representation"]
+        B --> C1[Context Head: AST & Scope Topology]
+        B --> C2[Delta Head: Structural AST Transformation]
+        B --> C3[Cadence Head: Friction & Rhythm Profiler]
+        B --> C4[Outcome Head: Build & Test Verification]
+        C1 & C2 & C3 & C4 --> D[Episodic Chunking Engine]
+    end
+
+    subgraph Layer3["3. Inductive Inference Engine (The Detective)"]
+        D --> E[Unsupervised Episode Clustering]
+        E --> F[Pre-Trained Base Foundation LLM]
+        F --> G[Hypothesis Generator & Bayesian Evaluator]
+    end
+
+    subgraph Layer4["4. Persistent Behavioral Memory"]
+        G --> H[(Neuro-Symbolic Behavioral Principle Bank)]
+        H <--> I[User Inspection & Rule Calibration Deck]
+    end
+
+    subgraph Layer5["5. Replication & Embodied Actuation (The Actor)"]
+        J[Novel Task Context] --> K[Principle Matcher]
+        H --> K
+        K --> L[Foundation LLM Conditioned by User Invariants]
+        L --> M[Kinematic Cursor & Compliant Keyboard Actuation]
+        M --> N[Real OS Execution / Terminal / Desktop]
+        N --> O[Triple-Failsafe Emergency Stop]
+    end
+```
+
+### 3.1. Observation Layer
+Collects behavioral signals from explicitly permitted environments (Git commits, file diffs, terminal commands, and contextual outcomes). Observation is selective, lightweight, privacy-preserving, and context-aware.
+
+### 3.2. Parallel Multi-Vector Representation
+Raw events are chunked into **Behavioral Episodes** and processed across independent embedding channels:
+* **Context Vector ($\mathbf{v}_{\text{context}}$):** Abstract semantic state and dependency topology.
+* **Delta Vector ($\mathbf{v}_{\Delta}$):** Structural AST transformations (the actual operation performed).
+* **Friction Vector ($\mathbf{v}_{\text{cadence}}$):** Human typing rhythm, pauses, and backspaces (separates confident habit from trial-and-error).
+* **Outcome Vector ($\mathbf{v}_{\text{outcome}}$):** Quantitative validation signals (test suite results, compiler status).
+
+### 3.3. Inductive Inference Engine (The Detective)
+The core learning mechanism. Using a base pre-trained Foundation LLM as an inductive reasoner, MIMIR analyzes clusters of similar transitions and extracts the **latent principles** behind decisions without requiring human prompt engineering.
+
+### 3.4. Persistent Behavioral Memory (Neuro-Symbolic Bank)
+Knowledge is stored as inspectable, confidence-weighted, and editable rules. Rather than an opaque black box, every learned principle references the supporting evidence and contradiction history that produced it.
+
+### 3.5. Replication & Embodied Actuation (The Digital Cobot)
+MIMIR does not just suggest code; it can physically actuate within the operating system using kinematically smoothed cursor trajectories, organic typing cadence, and terminal command execution.
+
+---
+
+## 4. The Data Contract: What is a "Behavioral Principle"?
+
+In MIMIR, the atomic unit of learning is a **Behavioral Principle**—a structured, transferable, and falsifiable representation of human instinct:
+
+```json
+{
+  "id": "bp_error_isolation_019",
+  "name": "Defensive Domain Isolation on Untrusted Boundaries",
+  "category": "architecture",
+  
+  "context_trigger": {
+    "scope": "Third-party network I/O, database drivers, or filesystem access",
+    "language_agnostic": true
+  },
+
+  "latent_invariant": "Never let third-party driver or HTTP exceptions leak into domain logic. Always catch, transform, and re-raise into typed domain exceptions.",
+
+  "anti_patterns": [
+    "Catching raw Exception without re-raising",
+    "Allowing framework-specific exceptions to bubble up to controllers"
+  ],
+
+  "epistemic_status": {
+    "confidence_score": 0.94,
+    "supporting_episodes_count": 18,
+    "contradictions_count": 1,
+    "first_inferred": "2026-10-12T10:00:00Z",
+    "last_validated": "2026-10-27T08:30:00Z"
+  },
+
+  "inspectable_traces": [
+    "commit_ref_a81f9b",
+    "session_diff_payment_gateway"
+  ]
+}
+```
+
+---
+
+## 5. The User Experience: The Gen 2.5 Desktop Presence
+
+MIMIR interacts with the human through three organic modalities:
+
+### 5.1. The Expressive Visor (Floating Head Unit)
+A sleek, borderless, semi-transparent avatar floats unobtrusively on the screen:
+* 😴 **Resting / Muted:** Idle state, zero telemetry, zero audio listening.
+* 🧐 **Observing:** Telemetry active; quietly learning habits from background diffs.
+* 🎙️ **Listening / Speaking:** Natural voice coordination active.
+* 🤔 **Inferring:** Base LLM is synthesizing new behavioral principles.
+* 🤖 **Driving (Replicating):** Actively moving cursor or executing workflows.
+* ✋ **Alert / Interrupted:** Emergency stop engaged; waiting for human feedback.
+
+### 5.2. Natural Voice Coordination
+Users coordinate with MIMIR hands-free:
+> **User:** *"Hey, have you learned how I push code to GitHub yet?"*  
+> **MIMIR (via voice):** *"Yes. I observed 8 examples. You run pre-flight tests, write conventional commits, and push to feature branches. Would you like me to push your current changes?"*  
+> **User:** *"Go ahead."*
+
+### 5.3. Physical & Compliant Actuation
+* **Organic Kinematics:** Cursors move along smooth acceleration/deceleration curves rather than instantaneous robotic snapping. Typing features human micro-pauses at syntactic boundaries.
+* **Backdrivable Compliance (The Golden Rule):** Like physical collaborative robots with torque sensors, MIMIR yields instantly. The millisecond the user touches their physical mouse, taps `ESC`, or speaks *"Stop"*, MIMIR releases control completely.
+
+---
+
+## 6. Safety, Privacy & Ethical Boundaries
+
+1. **Zero-Leakage Observation Boundary:** Telemetry is strictly constrained to explicitly whitelisted directories and repositories. Credentials, `.env` files, API keys, and personal communications are permanently blacklisted and redacted at the driver level.
+2. **Epistemic Humility:** When confronted with low-similarity contexts, MIMIR flags uncertainty and asks for human confirmation rather than making ungrounded assumptions.
+3. **Total Transparency:** No hidden weights or inaccessible memory. Users can view, edit, calibrate, or purge any principle in the Behavioral Memory at any time.
+
+---
+
+## 7. 10-Day MVP Execution Plan
+
+To validate the core thesis without premature over-engineering, the MVP follows a strict 10-day sprint:
+
+| Day | Focus Area | Key Milestone / Deliverable |
+| :---: | :--- | :--- |
+| **Day 1** | **Core Data Contracts** | Formal schemas for `BehavioralEpisode` and `BehavioralPrinciple`. |
+| **Day 2** | **Fast Telemetry Bridge** | Git commit history parser extracting real before/after transition pairs. |
+| **Day 3** | **Inductive Detective Engine** | LLM pipeline distilling raw transitions into latent behavioral principles. |
+| **Day 4** | **Bayesian Confidence Engine** | Reinforcement and contradiction tracking for inferred principles. |
+| **Day 5** | **Behavioral Memory & Vector Store** | Local hybrid store (ChromaDB + SQLite) with semantic search. |
+| **Day 6** | **Principle Steering Layer** | Conditioning Base LLM to generate code strictly adhering to active principles. |
+| **Day 7** | **Physical Cursor & Command Actuation** | Smooth mouse gliding (`pyautogui`), typing, and instant failsafe kill-switch. |
+| **Day 8** | **Voice Bridge & Expressive Visor** | Whisper STT + Edge-TTS + minimal floating avatar with cognitive states. |
+| **Day 9** | **End-to-End Validation** | Replicating a developer's Git push workflow on a novel repository. |
+| **Day 10** | **Live Showcase & Demo Polish** | Full interactive demo: Observation $\to$ Voice query $\to$ Autonomous compliant execution. |
+
+---
+
+## 8. Definition of Success
+
+MIMIR is not measured by conversational flair or raw automated actions. Its defining success metric is:
+
+> **Can the system observe human behavior, infer a reusable, inspectable model of that behavior without manual prompt configuration, and apply that understanding to successfully execute an unfamiliar task in the human's authentic style?**
+
+If MIMIR achieves this, it marks the beginning of true **observation-driven collaborative intelligence**.
+
+---
+
+*Status: Architecture Formulation & Initial MVP Sprint.*  
+*Repository: [github.com/arin-gupta06/MIMIR](https://github.com/arin-gupta06/MIMIR.git)*
