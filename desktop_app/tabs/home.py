@@ -65,22 +65,25 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
     top.addWidget(status_card)
     layout.addLayout(top)
 
-    bar_row = QtWidgets.QHBoxLayout()
-    bar_row.setSpacing(10)
+    explore_pill = QtWidgets.QFrame()
+    explore_pill.setObjectName("explore_pill")
+    pill_lay = QtWidgets.QHBoxLayout(explore_pill)
+    pill_lay.setContentsMargins(16, 6, 8, 6)
+    pill_lay.setSpacing(12)
     sparkle = QtWidgets.QLabel("✦")
     sparkle.setObjectName("faint")
     explore = QtWidgets.QLineEdit()
-    explore.setObjectName("explore_bar")
+    explore.setObjectName("explore_input")
     explore.setPlaceholderText("What would you like to explore?")
     explore.setClearButtonEnabled(True)
     mic_btn = QtWidgets.QPushButton("🎙")
     mic_btn.setObjectName("mic_btn")
-    mic_btn.setFixedSize(40, 40)
+    mic_btn.setFixedSize(36, 36)
     mic_btn.setToolTip("Speak instead of typing (needs a microphone)")
-    bar_row.addWidget(sparkle)
-    bar_row.addWidget(explore, 1)
-    bar_row.addWidget(mic_btn)
-    layout.addLayout(bar_row)
+    pill_lay.addWidget(sparkle)
+    pill_lay.addWidget(explore, 1)
+    pill_lay.addWidget(mic_btn)
+    layout.addWidget(explore_pill)
 
     chips = QtWidgets.QHBoxLayout()
     chips.setSpacing(8)
@@ -132,9 +135,9 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
         kpi_cards.append(number)
         return card_widget
 
-    kpi_row.addWidget(kpi("▤", "Principles learned", "memory", "icon_box_purple"))
-    kpi_row.addWidget(kpi("ılı", "Episodes observed", "observe", "icon_box_blue"))
-    kpi_row.addWidget(kpi("📊", "Average confidence", "memory", "icon_box_green"))
+    kpi_row.addWidget(kpi("📖", "Principles learned", "memory", "icon_box_purple"))
+    kpi_row.addWidget(kpi("ᯤ", "Episodes observed", "observe", "icon_box_blue"))
+    kpi_row.addWidget(kpi("📈", "Average confidence", "memory", "icon_box_green"))
     layout.addLayout(kpi_row)
 
     layout.addWidget(overline("What would you like to do?"))
@@ -143,7 +146,7 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
     actions = [
         ("👁", "Observe", "Watch repos, learn your habits.", "observe", "icon_box_purple"),
         ("📖", "Memory", "Your standards, inspectable.", "memory", "icon_box_blue"),
-        ("⎘", "Replicate", "Apply your style to new tasks.", "replicate", "icon_box_green"),
+        ("⧉", "Replicate", "Apply your style to new tasks.", "replicate", "icon_box_green"),
         ("🛡", "Trust", "Stays local, you're in control.", "trust", "icon_box_amber"),
     ]
     for icon, heading, body, tab_id, icon_cls in actions:

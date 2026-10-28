@@ -17,10 +17,10 @@ SIDEBAR_WIDTH = 216
 #: Text-safe rail glyphs (spec section 4 shell diagram).
 NAV_ICONS: dict[str, str] = {
     "home": "⌂",
-    "observe": "◉",
-    "memory": "▤",
-    "replicate": "⎘",
-    "trust": "◈",
+    "observe": "👁",
+    "memory": "📖",
+    "replicate": "⧉",
+    "trust": "🛡",
     "settings": "⚙",
 }
 

@@ -19,13 +19,14 @@ from ._qt import load_qt
 __all__ = ["build_memory_tab"]
 
 CATEGORY_ICONS = {
-    "architecture": "⌗",
+    "architecture": "</>",
     "testing": "✓",
-    "workflow": "▤",
+    "workflow": "📁",
     "documentation": "◫",
-    "refactoring": "⇄",
+    "refactoring": "🔄",
     "dependency": "⛓",
-    "style": "✎",
+    "style": "📄",
+    "practical": "💡",
 }
 
 
@@ -38,15 +39,14 @@ def build_memory_tab(state: AppState, status: Any) -> Any:
 
     row = QtWidgets.QHBoxLayout()
     row.setSpacing(10)
+    row.addStretch(1)
     search_edit = QtWidgets.QLineEdit()
     search_edit.setPlaceholderText("🔍 Search principles...")
+    search_edit.setFixedWidth(240)
     category = QtWidgets.QComboBox()
-    category.setMaximumWidth(180)
-    refresh_btn = QtWidgets.QPushButton("Refresh")
-    refresh_btn.setObjectName("soft")
-    row.addWidget(search_edit, 1)
+    category.setFixedWidth(90)
+    row.addWidget(search_edit)
     row.addWidget(category)
-    row.addWidget(refresh_btn)
     layout.addLayout(row)
 
     stack = QtWidgets.QStackedWidget()
@@ -56,6 +56,7 @@ def build_memory_tab(state: AppState, status: Any) -> Any:
     list_lay.setSpacing(10)
     count_note = QtWidgets.QLabel("")
     count_note.setObjectName("muted")
+    count_note.setVisible(False)
     list_lay.addWidget(count_note)
     feed = QtWidgets.QVBoxLayout()
     feed.setSpacing(10)
@@ -198,15 +199,25 @@ def build_memory_tab(state: AppState, status: Any) -> Any:
         for principle in principles:
             conf = principle.epistemic_status.confidence_score
             label, kind = confidence_badge(conf)
-            icon_cls = "icon_box_green" if kind == "confirmed" else ("icon_box_purple" if kind == "learning" else "icon_box_blue")
+            glyph_char = CATEGORY_ICONS.get(principle.category, "✦")
+            if glyph_char == "</>":
+                icon_cls = "icon_box_purple"
+            elif glyph_char in ("📄", "📁"):
+                icon_cls = "icon_box_blue"
+            elif glyph_char == "🔄":
+                icon_cls = "icon_box_neutral"
+            elif glyph_char == "💡":
+                icon_cls = "icon_box_purple"
+            else:
+                icon_cls = "icon_box_green" if kind == "confirmed" else "icon_box_blue"
+
             row_card = ClickableCard(
                 "principle_card",
                 on_click=lambda p=principle: open_detail(p))
             lay = QtWidgets.QHBoxLayout(row_card)
             lay.setContentsMargins(16, 12, 16, 12)
             lay.setSpacing(14)
-            glyph = QtWidgets.QLabel(
-                CATEGORY_ICONS.get(principle.category, "✦"))
+            glyph = QtWidgets.QLabel(glyph_char)
             glyph.setObjectName(icon_cls)
             text = QtWidgets.QVBoxLayout()
             text.setSpacing(2)
@@ -282,7 +293,6 @@ def build_memory_tab(state: AppState, status: Any) -> Any:
     search_edit.textChanged.connect(lambda _t: render())
     search_edit.returnPressed.connect(lambda: render())
     category.currentTextChanged.connect(lambda _t: render())
-    refresh_btn.clicked.connect(render)
     back_btn.clicked.connect(lambda: stack.setCurrentIndex(0))
     plus_btn.clicked.connect(lambda: adjust(0.05))
     minus_btn.clicked.connect(lambda: adjust(-0.10))

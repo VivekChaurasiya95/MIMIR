@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..state import AppState
-from ._layout import actions_row, card, page, page_head, toggle
+from ._layout import ClickableCard, actions_row, card, page, page_head, toggle
 from ._qt import load_qt
 
 __all__ = ["build_trust_tab"]
@@ -33,11 +33,25 @@ def build_trust_tab(state: AppState, status: Any) -> Any:
     access_lay.addWidget(access_title)
     access_lay.addWidget(access_sub)
     scopes = QtWidgets.QVBoxLayout()
-    scopes.setSpacing(8)
+    scopes.setSpacing(10)
     access_lay.addLayout(scopes)
-    add_btn = QtWidgets.QPushButton("+ Add application")
-    add_btn.setObjectName("soft")
-    access_lay.addLayout(actions_row(add_btn))
+    
+    add_row = ClickableCard("scope_row", on_click=lambda: on_add())
+    add_row.setStyleSheet("background: transparent; border: 0;")
+    al = QtWidgets.QHBoxLayout(add_row)
+    al.setContentsMargins(0, 4, 0, 4)
+    al.setSpacing(12)
+    plus_icon = QtWidgets.QLabel("+")
+    plus_icon.setObjectName("h2")
+    add_label = QtWidgets.QLabel("Add application")
+    add_label.setObjectName("h2")
+    add_chevron = QtWidgets.QLabel(">")
+    add_chevron.setObjectName("faint")
+    al.addWidget(plus_icon)
+    al.addWidget(add_label)
+    al.addStretch(1)
+    al.addWidget(add_chevron)
+    access_lay.addWidget(add_row)
     layout.addWidget(access_box)
 
     data_box, data_lay = card()
@@ -53,38 +67,52 @@ def build_trust_tab(state: AppState, status: Any) -> Any:
 
     # Row 1: Storage location
     r1 = QtWidgets.QHBoxLayout()
-    r1_icon = QtWidgets.QLabel("💾")
+    r1_icon = QtWidgets.QLabel("🗄")
     r1_icon.setObjectName("h2")
-    r1_label = QtWidgets.QLabel("Storage location:")
-    r1_label.setObjectName("subtle")
+    r1_label = QtWidgets.QLabel("Storage location")
+    r1_label.setObjectName("h2")
     r1_val = QtWidgets.QLabel("Local (This device)")
-    r1_val.setObjectName("h2")
+    r1_val.setObjectName("muted")
+    r1_chev = QtWidgets.QLabel(">")
+    r1_chev.setObjectName("faint")
     r1.addWidget(r1_icon)
     r1.addWidget(r1_label)
     r1.addStretch(1)
     r1.addWidget(r1_val)
+    r1.addWidget(r1_chev)
     data_rows.addLayout(r1)
+
+    div1 = QtWidgets.QFrame()
+    div1.setObjectName("row_divider")
+    data_rows.addWidget(div1)
 
     # Row 2: Retention period
     r2 = QtWidgets.QHBoxLayout()
     r2_icon = QtWidgets.QLabel("🕒")
     r2_icon.setObjectName("h2")
-    r2_label = QtWidgets.QLabel("Retention period:")
-    r2_label.setObjectName("subtle")
+    r2_label = QtWidgets.QLabel("Retention period")
+    r2_label.setObjectName("h2")
     r2_val = QtWidgets.QLabel("Until you delete")
-    r2_val.setObjectName("h2")
+    r2_val.setObjectName("muted")
+    r2_chev = QtWidgets.QLabel(">")
+    r2_chev.setObjectName("faint")
     r2.addWidget(r2_icon)
     r2.addWidget(r2_label)
     r2.addStretch(1)
     r2.addWidget(r2_val)
+    r2.addWidget(r2_chev)
     data_rows.addLayout(r2)
+
+    div2 = QtWidgets.QFrame()
+    div2.setObjectName("row_divider")
+    data_rows.addWidget(div2)
 
     # Row 3: Clear all learned data
     r3 = QtWidgets.QHBoxLayout()
     r3_icon = QtWidgets.QLabel("🗑")
     r3_icon.setObjectName("h2")
-    r3_label = QtWidgets.QLabel("Clear all learned data:")
-    r3_label.setObjectName("subtle")
+    r3_label = QtWidgets.QLabel("Clear all learned data")
+    r3_label.setObjectName("h2")
     wipe_btn = QtWidgets.QPushButton("Clear")
     wipe_btn.setObjectName("clear_btn")
     r3.addWidget(r3_icon)
@@ -94,10 +122,6 @@ def build_trust_tab(state: AppState, status: Any) -> Any:
     data_rows.addLayout(r3)
 
     data_lay.addLayout(data_rows)
-    store_line = QtWidgets.QLabel(f"Memory file: {state.store_path}")
-    store_line.setObjectName("muted")
-    store_line.setWordWrap(True)
-    data_lay.addWidget(store_line)
     layout.addWidget(data_box)
 
     filter_box, filter_lay = card()
@@ -122,6 +146,7 @@ def build_trust_tab(state: AppState, status: Any) -> Any:
     filter_verdict.setObjectName("muted")
     filter_verdict.setWordWrap(True)
     filter_lay.addWidget(filter_verdict)
+    filter_box.setVisible(False)
     layout.addWidget(filter_box)
     layout.addStretch(1)
 
@@ -148,7 +173,11 @@ def build_trust_tab(state: AppState, status: Any) -> Any:
                 ("🌐", "Google Chrome", "Browsing activity (titles & structure)", True),
                 ("⌨", "Terminal / Command Line", "Commands and context (no sensitive content)", False),
             ]
-            for glyph_char, title_str, meta_str, on in apps:
+            for i, (glyph_char, title_str, meta_str, on) in enumerate(apps):
+                if i > 0:
+                    div = QtWidgets.QFrame()
+                    div.setObjectName("row_divider")
+                    scopes.addWidget(div)
                 row = QtWidgets.QHBoxLayout()
                 row.setSpacing(12)
                 glyph = QtWidgets.QLabel(glyph_char)
@@ -166,6 +195,9 @@ def build_trust_tab(state: AppState, status: Any) -> Any:
                 row.addLayout(text, 1)
                 row.addWidget(switch)
                 scopes.addLayout(row)
+            div_end = QtWidgets.QFrame()
+            div_end.setObjectName("row_divider")
+            scopes.addWidget(div_end)
             return
 
         for root_path in roots:
@@ -247,7 +279,6 @@ def build_trust_tab(state: AppState, status: Any) -> Any:
                         "muted")
         status.showMessage(f"Redaction: {preview['count']} substitution(s).", 4000)
 
-    add_btn.clicked.connect(on_add)
     wipe_btn.clicked.connect(on_wipe)
     sample_btn.clicked.connect(lambda: raw.setPlainText(SAMPLE))
     check_btn.clicked.connect(on_check)

@@ -392,10 +392,11 @@ class QtSmokeTest(unittest.TestCase):
     def test_main_window_builds_offscreen(self):
         try:
             from desktop_app.tabs._qt import load_qt
-            load_qt()
+            _, _, _, QtWidgets = load_qt()
         except ImportError:
             self.skipTest("PyQt6/PySide6 not installed")
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        _app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
         from desktop_app.app import MainWindow
         main = MainWindow(AppState(store_path=":memory:"))
         try:

@@ -35,8 +35,14 @@ def build_settings_tab(state: AppState, status: Any) -> Any:
     nav = QtWidgets.QListWidget()
     nav.setObjectName("settings_nav")
     nav.setFixedWidth(180)
-    nav.addItems(["General", "Voice", "Model", "Appearance", "Shortcuts",
-                  "Integrations"])
+    nav.addItems([
+        "⚙  General",
+        "🎙  Voice",
+        "✦  Model",
+        "🎨  Appearance",
+        "⌨  Shortcuts",
+        "🔌  Integrations",
+    ])
     stack = QtWidgets.QStackedWidget()
     body.addWidget(nav)
     body.addWidget(stack, 1)
@@ -53,51 +59,52 @@ def build_settings_tab(state: AppState, status: Any) -> Any:
     # -- General ---------------------------------------------------------
     general = QtWidgets.QWidget()
     general_lay = QtWidgets.QVBoxLayout(general)
-    general_lay.setContentsMargins(0, 0, 0, 0)
-    general_lay.setSpacing(12)
-    gen_box, gen_lay = card()
+    general_lay.setContentsMargins(12, 4, 16, 4)
+    general_lay.setSpacing(16)
+
     gen_head = QtWidgets.QLabel("General")
     gen_head.setObjectName("h2")
     gen_sub = QtWidgets.QLabel("Basic preferences for MIMIR.")
     gen_sub.setObjectName("muted")
-    gen_lay.addWidget(gen_head)
-    gen_lay.addWidget(gen_sub)
+    general_lay.addWidget(gen_head)
+    general_lay.addWidget(gen_sub)
+
     gen_form = QtWidgets.QFormLayout()
-    gen_form.setSpacing(10)
-    your_name = QtWidgets.QLineEdit(state.prefs.user_name)
-    assistant_name = QtWidgets.QLineEdit(state.prefs.assistant_name)
+    gen_form.setSpacing(14)
+    _, QtCore, _, _ = load_qt()
+    gen_form.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
+    assistant_name = QtWidgets.QLineEdit(state.prefs.assistant_name or "MIMIR")
+    assistant_name.setMaximumWidth(320)
     language = QtWidgets.QComboBox()
     language.addItems(LANGUAGES)
+    language.setMaximumWidth(320)
     if state.prefs.language in LANGUAGES:
         language.setCurrentText(state.prefs.language)
     launch_toggle = toggle(state.prefs.start_on_launch)
     tray_toggle = toggle(state.prefs.show_in_tray)
-    gen_form.addRow("Your name:", your_name)
-    gen_form.addRow("Assistant name:", assistant_name)
-    gen_form.addRow("Language:", language)
-    gen_form.addRow("Start on system launch:", launch_toggle)
-    gen_form.addRow("Show in system tray:", tray_toggle)
-    gen_lay.addLayout(gen_form)
-    general_lay.addWidget(gen_box)
-    updates_box, updates_lay = card()
+    gen_form.addRow("Name", assistant_name)
+    gen_form.addRow("Language", language)
+    gen_form.addRow("Start on system launch", launch_toggle)
+    gen_form.addRow("Show in system tray", tray_toggle)
+    general_lay.addLayout(gen_form)
+
+    general_lay.addSpacing(16)
     updates_head = QtWidgets.QLabel("Updates")
     updates_head.setObjectName("h2")
-    updates_lay.addWidget(updates_head)
+    general_lay.addWidget(updates_head)
     updates_row = QtWidgets.QHBoxLayout()
-    version_label = QtWidgets.QLabel("")
+    version_label = QtWidgets.QLabel("Version 1.0.0")
     version_label.setObjectName("muted")
     check_btn = QtWidgets.QPushButton("Check for updates")
-    check_btn.setObjectName("soft")
-    updates_row.addWidget(version_label, 1)
+    check_btn.setObjectName("start_obs_btn")
+    check_btn.setStyleSheet("border-radius: 8px; padding: 6px 16px; font-size: 12px;")
+    updates_row.addWidget(version_label)
+    updates_row.addStretch(1)
     updates_row.addWidget(check_btn)
-    updates_lay.addLayout(updates_row)
-    general_lay.addWidget(updates_box)
+    general_lay.addLayout(updates_row)
     general_lay.addStretch(1)
     stack.addWidget(general)
 
-    your_name.editingFinished.connect(
-        lambda: (setattr(state.prefs, "user_name",
-                         your_name.text().strip() or "Arin"), save_prefs()))
     assistant_name.editingFinished.connect(
         lambda: (setattr(state.prefs, "assistant_name",
                          assistant_name.text().strip() or "MIMIR"),

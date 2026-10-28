@@ -18,7 +18,7 @@ dependencies = []
 cobot = [
   "pyautogui>=0.9.0",
   "pynput>=1.7.0",
-  "PyQt6>=6.6.0",
+  "PyQt6>=6.6.0,<=6.9.1",
   "edge-tts>=6.1.0",
   "openai-whisper>=20250625",
   "SpeechRecognition>=3.10.0",

@@ -47,16 +47,21 @@ def build_observe_tab(state: AppState, status: Any,
     banner.setObjectName("status_card")
     bl = QtWidgets.QHBoxLayout(banner)
     bl.setContentsMargins(18, 14, 18, 14)
-    bl.setSpacing(12)
+    bl.setSpacing(14)
     dot = QtWidgets.QLabel("")
     dot.setObjectName("status_dot")
-    banner_text = QtWidgets.QLabel("")
-    banner_text.setObjectName("subtle")
-    banner_text.setWordWrap(True)
+    banner_text_col = QtWidgets.QVBoxLayout()
+    banner_text_col.setSpacing(2)
+    state_line = QtWidgets.QLabel("Resting · Not observing")
+    state_line.setObjectName("h2")
+    context_line = QtWidgets.QLabel("Your workspace isn't being observed right now.")
+    context_line.setObjectName("muted")
+    banner_text_col.addWidget(state_line)
+    banner_text_col.addWidget(context_line)
     watch_btn = QtWidgets.QPushButton("")
     watch_btn.setObjectName("start_obs_btn")
     bl.addWidget(dot)
-    bl.addWidget(banner_text, 1)
+    bl.addLayout(banner_text_col, 1)
     bl.addWidget(watch_btn)
     layout.addWidget(banner)
 
@@ -73,12 +78,17 @@ def build_observe_tab(state: AppState, status: Any,
     apps_btn = QtWidgets.QPushButton("Applications")
     apps_btn.setObjectName("segment")
     apps_btn.setCheckable(True)
+    filters_btn = QtWidgets.QPushButton("Filters")
+    filters_btn.setObjectName("segment")
+    filters_btn.setCheckable(True)
     seg_group = QtWidgets.QButtonGroup(root)
     seg_group.setExclusive(True)
     seg_group.addButton(sessions_btn)
     seg_group.addButton(apps_btn)
+    seg_group.addButton(filters_btn)
     seg_lay.addWidget(sessions_btn)
     seg_lay.addWidget(apps_btn)
+    seg_lay.addWidget(filters_btn)
     seg_row.addWidget(seg_bar)
     seg_row.addStretch(1)
     timeframe = QtWidgets.QComboBox()
@@ -95,10 +105,12 @@ def build_observe_tab(state: AppState, status: Any,
     sessions_lay.setSpacing(10)
     feed_note = QtWidgets.QLabel("")
     feed_note.setObjectName("muted")
+    feed_note.setVisible(False)
     sessions_lay.addWidget(feed_note)
     feed_box = QtWidgets.QVBoxLayout()
     feed_box.setSpacing(10)
     sessions_lay.addLayout(feed_box)
+    sessions_lay.addStretch(1)
     stack.addWidget(sessions_page)
 
     apps_page = QtWidgets.QWidget()
@@ -117,9 +129,13 @@ def build_observe_tab(state: AppState, status: Any,
     add_btn = QtWidgets.QPushButton("+ Add folder")
     add_btn.setObjectName("soft")
     apps_lay.addLayout(actions_row(add_btn))
+    apps_lay.addStretch(1)
     stack.addWidget(apps_page)
-    layout.addWidget(stack)
 
+    filters_page = QtWidgets.QWidget()
+    filters_lay = QtWidgets.QVBoxLayout(filters_page)
+    filters_lay.setContentsMargins(0, 0, 0, 0)
+    filters_lay.setSpacing(10)
     ws_box, ws_lay = card()
     ws_title = QtWidgets.QLabel("Workspace")
     ws_title.setObjectName("h2")
@@ -148,7 +164,15 @@ def build_observe_tab(state: AppState, status: Any,
     view_btn.setObjectName("soft")
     view_btn.setEnabled(False)
     ws_lay.addLayout(actions_row(once_btn, learn_btn, view_btn))
-    layout.addWidget(ws_box)
+    filters_lay.addWidget(ws_box)
+    filters_lay.addStretch(1)
+    stack.addWidget(filters_page)
+
+    sessions_btn.clicked.connect(lambda: stack.setCurrentIndex(0))
+    apps_btn.clicked.connect(lambda: stack.setCurrentIndex(1))
+    filters_btn.clicked.connect(lambda: stack.setCurrentIndex(2))
+
+    layout.addWidget(stack)
     layout.addStretch(1)
 
     def save_prefs() -> None:
@@ -192,7 +216,7 @@ def build_observe_tab(state: AppState, status: Any,
                else f" · showing first {FEED_CAP}"))
         if not episodes:
             showcase_sessions = [
-                ("💻", "VS Code Session", "Today, 4:00 PM · 42 minutes", "Analyzed", "analyzed"),
+                ("🖥", "VS Code Session", "Today, 4:20 PM · 42 minutes", "Analyzed", "analyzed"),
                 ("🌐", "Chrome Session", "Today, 2:10 PM · 18 minutes", "Processed", "processed"),
                 ("📁", "Project: AlgoFight", "Yesterday, 8:15 PM · 1 hour 12 minutes", "Processed", "processed"),
                 ("⌨", "Terminal Session", "Yesterday, 6:01 PM · 24 minutes", "Ignored", "ignored"),
@@ -298,15 +322,15 @@ def build_observe_tab(state: AppState, status: Any,
     def refresh_banner() -> None:
         if watcher.watching:
             dot.setObjectName("status_dot_on")
-            banner_text.setText(
-                f"Observing · Recording telemetry from "
-                f"{state.prefs.last_repo or 'workspace'}. New commits land "
-                "below automatically.")
+            state_line.setText("Observing · Recording telemetry")
+            context_line.setText(
+                f"Recording telemetry from {state.prefs.last_repo or 'workspace'}. New commits land below automatically.")
             watch_btn.setText("⏹ Stop Observing")
         else:
             dot.setObjectName("status_dot")
-            banner_text.setText(
-                "Resting · Your workspace isn't being observed right now.")
+            state_line.setText("Resting · Not observing")
+            context_line.setText(
+                "Your workspace isn't being observed right now.")
             watch_btn.setText("▷ Start Observing")
         dot.style().unpolish(dot)
         dot.style().polish(dot)

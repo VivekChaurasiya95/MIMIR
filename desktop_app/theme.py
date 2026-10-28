@@ -76,32 +76,40 @@ def qt_stylesheet() -> str:
     """
     p = PORCELAIN
     return f"""
+* {{
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}}
 QMainWindow, QWidget#root {{ background: {p["bg_app"]}; }}
 QWidget#card {{
   background: {p["bg_surface"]};
   border: 1px solid {p["border_hairline"]};
   border-radius: 16px;
 }}
-QLabel#h1 {{ font-size: 26px; font-weight: 600; color: {p["text_heading"]}; }}
-QLabel#h2 {{ font-size: 15px; font-weight: 500; color: {p["text_heading"]}; }}
+QLabel#h1 {{
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 28px;
+  font-weight: 500;
+  color: {p["text_heading"]};
+}}
+QLabel#h2 {{ font-size: 15px; font-weight: 600; color: {p["text_heading"]}; }}
 QLabel#statvalue {{ font-size: 22px; font-weight: 700; color: {p["text_heading"]}; }}
 QLabel#lede, QLabel#subtle {{ color: {p["text_body"]}; font-size: 14px; }}
 QLabel#muted {{ color: {p["text_muted"]}; font-size: 12px; }}
-QLabel#faint {{ color: {p["text_faint"]}; font-size: 11px; }}
+QLabel#faint {{ color: {p["text_faint"]}; font-size: 12px; font-weight: 600; }}
 QLabel#ok {{ color: {p["status_green_text"]}; font-weight: 600; }}
 QLabel#err {{ color: {p["status_red_text"]}; font-weight: 600; }}
 QLabel#brand {{
-  font-size: 13px; font-weight: 700; color: {p["text_heading"]};
+  font-size: 13px; font-weight: 700; letter-spacing: 2px; color: {p["text_heading"]};
 }}
 QLabel#hero_overline {{
-  font-size: 11px; font-weight: 700; color: {p["text_muted"]};
+  font-size: 11px; font-weight: 700; letter-spacing: 1px; color: {p["text_muted"]};
 }}
 QLabel#hero_name {{
   font-family: Georgia, 'Times New Roman', serif;
   font-size: 38px; font-weight: 400; color: {p["text_serif_hero"]};
 }}
 QLabel#overline {{
-  font-size: 11px; font-weight: 700; color: {p["text_muted"]};
+  font-size: 11px; font-weight: 700; letter-spacing: 1px; color: {p["text_muted"]};
 }}
 QPushButton#ink {{
   background: {p["text_heading"]}; color: white; border: 0;
@@ -111,11 +119,11 @@ QPushButton#ink:hover {{ background: {p["text_body"]}; }}
 QPushButton#ink:pressed {{ background: #020617; }}
 QPushButton#ink:disabled {{ background: {p["bg_disabled"]}; color: {p["text_faint"]}; }}
 QPushButton#soft {{
-  background: {p["bg_hover"]}; color: {p["text_heading"]};
+  background: {p["bg_surface"]}; color: {p["text_heading"]};
   border: 1px solid {p["border_subtle"]};
-  border-radius: 999px; padding: 8px 20px; font-weight: 600; min-height: 22px;
+  border-radius: 999px; padding: 7px 18px; font-weight: 500; font-size: 12px; min-height: 22px;
 }}
-QPushButton#soft:hover {{ border-color: {p["border_focus"]}; }}
+QPushButton#soft:hover {{ border-color: {p["border_focus"]}; background: {p["bg_hover"]}; }}
 QPushButton#soft:pressed {{ background: {p["bg_pressed"]}; }}
 QPushButton#soft:disabled {{
   background: {p["bg_subtle"]}; color: {p["text_faint"]};
@@ -123,7 +131,7 @@ QPushButton#soft:disabled {{
 }}
 QPushButton#generate_btn {{
   background: {p["accent_primary"]}; color: white; border: 0;
-  border-radius: 8px; padding: 10px 26px; font-weight: 600; font-size: 14px;
+  border-radius: 8px; padding: 10px 24px; font-weight: 600; font-size: 13px;
   min-height: 24px;
 }}
 QPushButton#generate_btn:hover {{ background: {p["accent_primary_hover"]}; }}
@@ -133,10 +141,10 @@ QPushButton#generate_btn:disabled {{
 }}
 QPushButton#chip {{
   background: {p["bg_surface"]}; color: {p["text_body"]};
-  border: 1px solid {p["border_subtle"]};
-  border-radius: 999px; padding: 6px 14px; font-size: 12px;
+  border: 1px solid {p["border_hairline"]};
+  border-radius: 999px; padding: 6px 14px; font-size: 12px; font-weight: 500;
 }}
-QPushButton#chip:hover {{ border-color: {p["border_focus"]}; color: {p["text_heading"]}; }}
+QPushButton#chip:hover {{ border-color: {p["border_subtle"]}; color: {p["text_heading"]}; background: {p["bg_hover"]}; }}
 QPushButton#nav_btn {{
   background: transparent; color: {p["text_muted"]}; border: 0;
   border-radius: 10px; padding: 9px 14px; font-weight: 500; font-size: 13px;
@@ -184,8 +192,31 @@ QLineEdit#explore_bar {{
   border-radius: 999px; padding: 12px 20px; font-size: 14px;
   border: 1px solid {p["border_hairline"]};
 }}
+QFrame#explore_pill {{
+  background: {p["bg_surface"]};
+  border: 1px solid {p["border_hairline"]};
+  border-radius: 999px;
+  padding: 4px 8px 4px 18px;
+}}
+QLineEdit#explore_input {{
+  background: transparent;
+  border: 0;
+  font-size: 14px;
+  color: {p["text_body"]};
+  padding: 6px 0px;
+}}
+QFrame#row_divider {{
+  background: {p["border_hairline"]};
+  border: 0;
+  max-height: 1px;
+  min-height: 1px;
+}}
 QTextEdit#task_input {{
-  border-radius: 16px; padding: 14px 16px; font-size: 14px;
+  background: transparent;
+  border: 0;
+  padding: 8px 0px;
+  font-size: 14px;
+  color: {p["text_body"]};
 }}
 QComboBox::drop-down {{ border: 0; width: 26px; }}
 QComboBox QAbstractItemView {{
@@ -223,8 +254,8 @@ QListWidget#settings_nav {{
   background: transparent; border: 0; padding: 0;
 }}
 QListWidget#settings_nav::item {{
-  border-radius: 10px; padding: 9px 14px; color: {p["text_muted"]};
-  font-weight: 500; font-size: 13px;
+  border-radius: 10px; padding: 10px 16px; color: {p["text_muted"]};
+  font-weight: 500; font-size: 13px; margin-bottom: 4px;
 }}
 QListWidget#settings_nav::item:selected {{
   background: {p["bg_nav_active"]}; color: {p["nav_active_text"]};
@@ -292,8 +323,8 @@ QLabel#icon_box_neutral {{
 }}
 QPushButton#mic_btn {{
   background: {p["bg_nav_active"]}; color: {p["nav_active_text"]};
-  border: 0; border-radius: 20px; font-size: 15px;
-  min-width: 40px; max-width: 40px; min-height: 40px; max-height: 40px;
+  border: 0; border-radius: 18px; font-size: 14px;
+  min-width: 36px; max-width: 36px; min-height: 36px; max-height: 36px;
 }}
 QPushButton#mic_btn:hover {{ background: {p["accent_pill_lavender"]}; }}
 QPushButton#start_obs_btn {{
@@ -311,28 +342,16 @@ QPushButton#clear_btn:hover {{ background: #FEE2E2; }}
 QLabel#badge {{
   border-radius: 999px; padding: 4px 12px; font-weight: 600; font-size: 12px;
 }}
-QLabel#badge_processed, QLabel#badge_completed {{
+QLabel#badge_processed, QLabel#badge_completed, QLabel#badge_confirmed {{
   background: {p["status_green_bg"]}; color: {p["status_green_text"]};
   border-radius: 999px; padding: 4px 12px; font-weight: 600; font-size: 12px;
 }}
-QLabel#badge_analyzed {{
+QLabel#badge_analyzed, QLabel#badge_learning, QLabel#badge_reviewed {{
   background: {p["status_blue_bg"]}; color: {p["status_blue_text"]};
   border-radius: 999px; padding: 4px 12px; font-weight: 600; font-size: 12px;
 }}
 QLabel#badge_ignored, QLabel#badge_unconfirmed {{
   background: {p["status_neutral_bg"]}; color: {p["status_neutral_text"]};
-  border-radius: 999px; padding: 4px 12px; font-weight: 600; font-size: 12px;
-}}
-QLabel#badge_confirmed {{
-  background: {p["status_green_bg"]}; color: {p["status_green_text"]};
-  border-radius: 999px; padding: 4px 12px; font-weight: 600; font-size: 12px;
-}}
-QLabel#badge_learning {{
-  background: {p["status_purple_bg"]}; color: {p["status_purple_text"]};
-  border-radius: 999px; padding: 4px 12px; font-weight: 600; font-size: 12px;
-}}
-QLabel#badge_reviewed {{
-  background: {p["status_amber_bg"]}; color: {p["status_amber_text"]};
   border-radius: 999px; padding: 4px 12px; font-weight: 600; font-size: 12px;
 }}
 QSplitter::handle {{ background: transparent; }}
