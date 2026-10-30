@@ -12,10 +12,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-__all__ = ["DEFAULT_PREFS_PATH", "DesktopPrefs", "MAX_RECENT_TASKS"]
+__all__ = [
+    "DEFAULT_PREFS_PATH",
+    "DesktopPrefs",
+    "MAX_RECENT_TASKS",
+    "MODEL_PROVIDERS",
+]
 
 MAX_RECENT_TASKS = 20
-DEFAULT_PREFS_PATH = str(Path.home() / ".mimir" / "desktop.json")
+DEFAULT_PREFS_PATH = str(Path.home() / ".habitous" / "desktop.json")
+
+#: Short provider ids persisted in ``DesktopPrefs.model_provider``.
+MODEL_PROVIDERS = ("offline", "openai", "anthropic", "gemini", "ollama")
 
 
 def _utc_now_iso() -> str:
@@ -27,7 +35,7 @@ class DesktopPrefs:
     """Persisted desktop choices (all JSON-serializable)."""
 
     user_name: str = "Arin"
-    assistant_name: str = "MIMIR"
+    assistant_name: str = "Habi"
     language: str = "English (US)"
     start_on_launch: bool = True
     show_in_tray: bool = True
@@ -37,6 +45,19 @@ class DesktopPrefs:
     last_roots: tuple[str, ...] = ()
     inactive_roots: tuple[str, ...] = ()
     recent_tasks: tuple[dict[str, str], ...] = ()
+    floating_cobot: bool = True
+    follow_mouse: bool = False
+    auto_roam: bool = False
+    model_provider: str = "offline"
+    model_name: str = ""
+    model_endpoint: str = ""
+    api_key: str = ""
+    voice_persona: str = "en-US-AriaNeural"
+    theme: str = "light"
+    accent: str = "Indigo"
+    spacious: bool = True
+    chimes: bool = True
+    contrast_baseline: bool = True
 
     def __post_init__(self) -> None:
         self.last_roots = tuple(self.last_roots)
@@ -45,14 +66,30 @@ class DesktopPrefs:
 
     @classmethod
     def load(cls, path: str = DEFAULT_PREFS_PATH) -> "DesktopPrefs":
+        target = Path(path)
+        if not target.exists() and path == DEFAULT_PREFS_PATH:
+            legacy = Path.home() / ".mimir" / "desktop.json"
+            if legacy.exists():
+                target = legacy
         try:
-            raw = json.loads(Path(path).read_text(encoding="utf-8"))
+            raw = json.loads(target.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return cls()
         if not isinstance(raw, dict):
             return cls()
+        if raw.get("assistant_name") == "MIMIR":
+            raw["assistant_name"] = "Habi"
         known = {f for f in cls.__dataclass_fields__}
         clean = {k: v for k, v in raw.items() if k in known}
+        if path == DEFAULT_PREFS_PATH:
+            if clean.get("last_repo") and not Path(clean["last_repo"]).exists():
+                clean["last_repo"] = str(Path.cwd().resolve())
+            if "last_roots" in clean:
+                existing = [r for r in clean["last_roots"] if Path(r).exists()]
+                cwd_str = str(Path.cwd().resolve())
+                if not existing:
+                    existing = [cwd_str]
+                clean["last_roots"] = tuple(existing)
         try:
             return cls(**clean)
         except TypeError:

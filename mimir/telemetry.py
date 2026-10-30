@@ -34,12 +34,16 @@ from .episodes import (
 )
 
 __all__ = [
+    "GitState",
     "NotARepositoryError",
+    "STATUS_LIST_CAP",
     "RedactionResult",
     "TelemetryBoundaryError",
     "TelemetryError",
     "observe_git_repo",
+    "read_git_state",
     "redact_text",
+    "resolve_repo",
 ]
 
 _RECORD_SEP = "\x1e"
@@ -198,7 +202,14 @@ def _canonical_path(value: str | Path) -> Path:
     return Path(_strip_extended_prefix(str(Path(_strip_extended_prefix(str(value))).resolve())))
 
 
-def _resolve_repo(repo_path: str | Path, allowed_roots: Sequence[str | Path]) -> Path:
+def resolve_repo(
+    repo_path: str | Path, allowed_roots: Sequence[str | Path]
+) -> Path:
+    """Resolve *repo_path* to its canonical top-level inside the whitelist.
+
+    :raises TelemetryBoundaryError: repo is outside ``allowed_roots``.
+    :raises NotARepositoryError: path is not a non-bare git repository.
+    """
     try:
         toplevel = _run_git(
             Path(repo_path), "rev-parse", "--show-toplevel"
@@ -217,6 +228,10 @@ def _resolve_repo(repo_path: str | Path, allowed_roots: Sequence[str | Path]) ->
             f"{[str(r) for r in roots]}"
         )
     return canonical
+
+
+def _resolve_repo(repo_path: str | Path, allowed_roots: Sequence[str | Path]) -> Path:
+    return resolve_repo(repo_path, allowed_roots)
 
 
 def _parse_log(output: str) -> list[tuple[str, str, str, str]]:
@@ -476,3 +491,120 @@ def observe_git_repo(
         _observe_commit(repo, sha, author, date, subject, max_diff_chars, include_authors)
         for sha, author, date, subject in _parse_log(log_output)
     ]
+
+
+#: Cap on paths carried per status list (counts always report totals).
+STATUS_LIST_CAP = 200
+
+
+@dataclass(frozen=True)
+class GitState:
+    """Live working-tree snapshot: branch, HEAD, and changed paths.
+
+    Paths only — never diff content — so uncommitted work stays visible
+    without leaking file contents into the event stream.
+    """
+
+    repo: str
+    branch: str
+    head: str
+    staged: tuple[str, ...] = ()
+    unstaged: tuple[str, ...] = ()
+    untracked: tuple[str, ...] = ()
+    staged_count: int = 0
+    unstaged_count: int = 0
+    untracked_count: int = 0
+    dirty: bool = False
+
+    def signature(
+        self,
+    ) -> tuple[str, str, frozenset[str], frozenset[str], frozenset[str],
+               int, int, int]:
+        """Equality key for change detection (paths as sets)."""
+        return (
+            self.branch,
+            self.head,
+            frozenset(self.staged),
+            frozenset(self.unstaged),
+            frozenset(self.untracked),
+            self.staged_count,
+            self.unstaged_count,
+            self.untracked_count,
+        )
+
+
+def _parse_porcelain_z(output: str) -> tuple[list[str], list[str], list[str]]:
+    """Split ``status --porcelain=v1 -z`` into staged/unstaged/untracked."""
+    staged: list[str] = []
+    unstaged: list[str] = []
+    untracked: list[str] = []
+    records = output.split("\x00")
+    index = 0
+    while index < len(records):
+        record = records[index]
+        index += 1
+        if len(record) < 4:
+            continue
+        code, path = record[:2], record[3:]
+        if code[0] in ("R", "C"):
+            # Rename/copy records are followed by the target path.
+            if index < len(records) and records[index]:
+                path = records[index]
+                index += 1
+        if code == "??":
+            untracked.append(path)
+            continue
+        if code[0] not in (" ", "?", "!"):
+            staged.append(path)
+        if code[1] not in (" ", "?", "!"):
+            unstaged.append(path)
+    return staged, unstaged, untracked
+
+
+def read_git_state(
+    repo_path: str | Path,
+    *,
+    allowed_roots: Sequence[str | Path],
+) -> GitState:
+    """Read the live repository state (branch, HEAD, working tree).
+
+    Complements :func:`observe_git_repo` history observation with the
+    uncommitted present. ``head`` is ``""`` for an unborn (commit-less)
+    repository; ``branch`` is ``"HEAD"`` when detached.
+
+    :raises TelemetryBoundaryError: repo is outside ``allowed_roots``.
+    :raises NotARepositoryError: path is not a non-bare git repository.
+    """
+    repo = _resolve_repo(repo_path, allowed_roots)
+    try:
+        branch = _run_git(repo, "rev-parse", "--abbrev-ref", "HEAD").strip()
+    except TelemetryError:
+        try:
+            branch = _run_git(
+                repo, "symbolic-ref", "--quiet", "--short", "HEAD"
+            ).strip()
+        except TelemetryError:
+            branch = "HEAD"
+    try:
+        head = _run_git(repo, "rev-parse", "HEAD").strip()
+    except TelemetryError:
+        head = ""
+    porcelain = _run_git(
+        repo, "status", "--porcelain=v1", "-z", "--untracked-files=normal"
+    )
+    staged, unstaged, untracked = _parse_porcelain_z(porcelain)
+    staged.sort()
+    unstaged.sort()
+    untracked.sort()
+    return GitState(
+        repo=str(repo),
+        branch=branch or "HEAD",
+        head=head,
+        staged=tuple(staged[:STATUS_LIST_CAP]),
+        unstaged=tuple(unstaged[:STATUS_LIST_CAP]),
+        untracked=tuple(untracked[:STATUS_LIST_CAP]),
+        staged_count=len(staged),
+        unstaged_count=len(unstaged),
+        untracked_count=len(untracked),
+        dirty=bool(staged or unstaged or untracked),
+    )

@@ -24,9 +24,14 @@ import subprocess
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Optional, Protocol, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Optional, Protocol, Sequence
 
-from ._common import check_int, check_mapping, check_str
+from ._common import check_bool, check_int, check_mapping, check_str
+from .events import EventBus, EventType
+from .safety import SafetyController, SafetyTrippedError
+
+if TYPE_CHECKING:
+    from .desktop import FocusGuard, TargetSpec, WindowBackend, WindowInfo
 
 __all__ = [
     "ActuatorError",
@@ -40,6 +45,7 @@ __all__ = [
     "FailsafeBackend",
     "KeyboardBackend",
     "MouseBackend",
+    "TargetValidationError",
     "plan_keystroke_delays",
     "plan_trajectory",
     "split_command_line",
@@ -48,6 +54,9 @@ __all__ = [
 _TRIP_MESSAGE = "human override: cobot motion interrupted"
 _COMMAND_POLL_SEC = 0.05
 _MOUSE_JITTER_PX = 5
+# Slice for interruptible waits while a safety controller is attached: a
+# latched E-stop is noticed within one slice even inside a long pause.
+_SAFETY_WAIT_SLICE_SEC = 0.01
 
 
 class ActuatorError(Exception):
@@ -56,6 +65,20 @@ class ActuatorError(Exception):
 
 class CobotInterruptedError(ActuatorError):
     """Raised immediately when the human touches the mouse or hits ESC."""
+
+
+class TargetValidationError(ActuatorError):
+    """Raised fail-closed when a desktop target cannot be verified.
+
+    Carries a machine-readable ``reason`` (``unauthorized``,
+    ``unknown_handle``, ``no_match``, ``ambiguous``, ``spec_mismatch``,
+    ``target_changed``, ``no_foreground``, ``foreground_mismatch``,
+    ``activation_denied``, ``backend_error``) alongside the message.
+    """
+
+    def __init__(self, message: str, *, reason: str = "validation_failed"):
+        super().__init__(message)
+        self.reason = reason
 
 
 @dataclass(frozen=True)
@@ -424,12 +447,22 @@ class DesktopActuator:
         mouse: Optional[MouseBackend] = None,
         keyboard: Optional[KeyboardBackend] = None,
         failsafe: Optional[FailsafeBackend] = None,
+        windows: Optional["WindowBackend"] = None,
+        event_bus: Optional[EventBus] = None,
+        safety: Optional[SafetyController] = None,
     ) -> None:
         if human_override_callback is not None and not callable(
             human_override_callback
         ):
             raise ValueError("human_override_callback: expected a callable")
+        if safety is not None and not isinstance(safety, SafetyController):
+            raise ValueError(
+                "safety: expected SafetyController or None, "
+                f"got {type(safety).__name__}"
+            )
         self.human_override_callback = human_override_callback
+        self._event_bus = event_bus
+        self._safety = safety
         self._mouse: MouseBackend = mouse if mouse is not None else DefaultMouse()
         self._keyboard: KeyboardBackend = (
             keyboard if keyboard is not None else DefaultKeyboard()
@@ -437,6 +470,13 @@ class DesktopActuator:
         self._failsafe: FailsafeBackend = (
             failsafe if failsafe is not None else DefaultFailsafe()
         )
+        if windows is None:
+            # Lazy import: mimir.desktop imports this module for its
+            # error types, so the live backend is resolved at runtime.
+            from .desktop import PyWin32WindowBackend
+
+            windows = PyWin32WindowBackend()
+        self._windows: "WindowBackend" = windows
         self._interrupted = threading.Event()
         self._failsafe_armed = False
         self._callback_lock = threading.Lock()
@@ -451,6 +491,74 @@ class DesktopActuator:
     def failsafe_armed(self) -> bool:
         return self._failsafe_armed
 
+    @property
+    def window_backend(self) -> "WindowBackend":
+        """Injectable window handle/process/title/foreground backend."""
+        return self._windows
+
+    @property
+    def safety(self) -> Optional[SafetyController]:
+        """Attached safety controller, or None when ungated."""
+        return self._safety
+
+    def resolve_target(
+        self, spec: "TargetSpec | str", *, operation: str = "resolve_target"
+    ) -> "WindowInfo":
+        """Resolve a target selector to exactly one live window snapshot."""
+        from .desktop import resolve_target
+
+        self._poll()
+        return resolve_target(
+            self._windows, spec, event_bus=self._event_bus,
+            operation=operation,
+        )
+
+    def validate_target(
+        self,
+        expected: "WindowInfo",
+        *,
+        require_foreground: bool = True,
+        authorized: bool = True,
+        operation: str = "",
+    ) -> "WindowInfo":
+        """Re-validate a resolved target before a sensitive operation."""
+        from .desktop import validate_target
+
+        self._poll()
+        return validate_target(
+            self._windows,
+            expected,
+            require_foreground=require_foreground,
+            authorized=authorized,
+            operation=operation,
+            event_bus=self._event_bus,
+        )
+
+    def focus_target(
+        self,
+        handle: int,
+        *,
+        preserve: bool = True,
+        verify: bool = True,
+        operation: str = "focus_target",
+    ) -> "FocusGuard":
+        """Build a guard that activates + verifies ``handle`` on entry.
+
+        Use as ``with actuator.focus_target(info.handle): ...``; the
+        preserved companion focus is restored best-effort on exit.
+        """
+        from .desktop import FocusGuard
+
+        self._poll()
+        return FocusGuard(
+            self._windows,
+            handle,
+            preserve=preserve,
+            verify=verify,
+            event_bus=self._event_bus,
+            operation=operation,
+        )
+
     def _arm_failsafe(self) -> None:
         """Arm the tripwire; degrade to disarmed mode when unavailable."""
         try:
@@ -462,8 +570,13 @@ class DesktopActuator:
         else:
             self._failsafe_armed = True
 
-    def _trip(self) -> None:
+    def _trip(self, *, source: str = "actuator-failsafe") -> None:
         self._interrupted.set()
+        if self._safety is not None:
+            try:
+                self._safety.trip(source=source, reason=_TRIP_MESSAGE)
+            except Exception:
+                pass  # propagation must never break the trip itself
         with self._callback_lock:
             if self._callback_fired:
                 return
@@ -474,13 +587,33 @@ class DesktopActuator:
                 callback()
             except Exception:
                 pass  # override delivery must never break the trip itself
+        if self._event_bus is not None:
+            try:
+                self._event_bus.emit(
+                    EventType.E_STOP_TRIGGERED,
+                    "safety.actuator_failsafe",
+                    {"failsafe_armed": self._failsafe_armed},
+                )
+            except Exception:
+                pass  # safety telemetry must never break the trip itself
 
     def abort(self) -> None:
-        """Trip the emergency killswitch manually."""
-        self._trip()
+        """Trip the emergency killswitch manually.
+
+        Propagates to the attached safety controller (when any): the
+        whole system latches stopped, and resuming needs both
+        :meth:`SafetyController.reset` with a deliberate authorization
+        and :meth:`reset` here.
+        """
+        self._trip(source="actuator-abort")
 
     def reset(self) -> None:
-        """Clear a trip so the cobot can resume after human feedback."""
+        """Clear a trip so the cobot can resume after human feedback.
+
+        Clears only this actuator's latch: a latched safety controller
+        still blocks every operation until
+        :meth:`SafetyController.reset` reauthorizes it deliberately.
+        """
         self._interrupted.clear()
         with self._callback_lock:
             self._callback_fired = False
@@ -502,12 +635,34 @@ class DesktopActuator:
     def _poll(self) -> None:
         if self._interrupted.is_set():
             raise CobotInterruptedError(_TRIP_MESSAGE)
+        if self._safety is not None:
+            try:
+                self._safety.check()
+            except SafetyTrippedError as exc:
+                raise CobotInterruptedError(f"safety stop: {exc}") from exc
 
     def _wait(self, seconds: float) -> None:
         # Event.wait wakes the instant abort() trips: halt latency stays
         # in the microsecond range no matter how long the pause is.
-        if self._interrupted.wait(seconds):
-            raise CobotInterruptedError(_TRIP_MESSAGE)
+        if self._safety is None:
+            if self._interrupted.wait(seconds):
+                raise CobotInterruptedError(_TRIP_MESSAGE)
+            return
+        # With a safety controller attached, slice long pauses so a
+        # latched E-stop is noticed within ~10 ms, not at the next step.
+        deadline = time.monotonic() + seconds
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            if self._interrupted.wait(
+                min(_SAFETY_WAIT_SLICE_SEC, remaining)
+            ):
+                raise CobotInterruptedError(_TRIP_MESSAGE)
+            try:
+                self._safety.check()
+            except SafetyTrippedError as exc:
+                raise CobotInterruptedError(f"safety stop: {exc}") from exc
 
     def _mouse_call(self, name: str, *args: int) -> Any:
         try:
@@ -540,14 +695,25 @@ class DesktopActuator:
         target: CursorPoint,
         duration_sec: float = 0.6,
         steps: int = 30,
+        *,
+        verify: bool = False,
+        tolerance: int = 2,
     ) -> None:
-        """Glide along a cubic Bezier trajectory, polling the tripwire."""
+        """Glide along a cubic Bezier trajectory, polling the tripwire.
+
+        With ``verify=True`` the cursor is read back afterwards and an
+        :class:`ActuatorError` is raised when it missed ``target`` by
+        more than ``tolerance`` pixels: successful injection is not
+        proof of execution.
+        """
         if not isinstance(target, CursorPoint):
             raise ValueError(
                 f"target: expected CursorPoint, got {type(target).__name__}"
             )
         duration_sec = _positive_seconds(duration_sec, field="duration_sec")
         steps = check_int(steps, field="steps", minimum=1)
+        verify = check_bool(verify, field="verify")
+        tolerance = check_int(tolerance, field="tolerance", minimum=0)
         start = self.cursor_position()
         per_step = duration_sec / steps
         for point in plan_trajectory(start, target, steps)[1:]:
@@ -557,19 +723,142 @@ class DesktopActuator:
                 note(point.x, point.y)
             self._mouse_call("move_to", point.x, point.y)
             self._wait(per_step)
+        if verify:
+            from .desktop import verify_cursor_at
 
-    def type_natural(self, text: str, base_wpm: int = 70) -> None:
-        """Type with organic cadence and syntactic micro-pauses."""
+            self._poll()
+            verify_cursor_at(
+                self._mouse,
+                target.x,
+                target.y,
+                tolerance=tolerance,
+                event_bus=self._event_bus,
+                operation="move_cursor_smooth",
+            )
+
+    def execute_trajectory(
+        self,
+        points: Sequence[CursorPoint],
+        duration_sec: float = 0.6,
+        *,
+        bounds: Optional[tuple[int, int]] = None,
+        cancel_event: Optional[threading.Event] = None,
+    ) -> dict[str, Any]:
+        """Command a precomputed Bezier trajectory on a worker thread.
+
+        Dedicated-executor path (plan section 7): monotonic scheduling,
+        fail-closed screen-bounds validation, stale-sample skipping
+        (no catch-up bursts), and deadline metrics. ``points`` usually
+        comes from :func:`plan_trajectory`. ``cancel_event`` (plus this
+        actuator's own interrupt) aborts via
+        :class:`CobotInterruptedError`; bounds violations raise
+        :class:`ActuatorError` before any motion. With a safety
+        controller attached, a latched E-stop aborts before the first
+        sample and at every subsequent sample. Returns the
+        trajectory report as a dict (see
+        :class:`mimir.trajectory.TrajectoryReport`).
+
+        Run this on an actuation worker thread, never on the Qt main
+        thread: it blocks for ``duration_sec`` by design.
+        """
+        from .trajectory import TrajectoryExecutor
+        from .trajectory import TrajectoryBoundsError as _Bounds
+        from .trajectory import TrajectoryCancelled as _Cancelled
+
+        if not isinstance(points, (list, tuple)) or not points:
+            raise ValueError("points: expected a non-empty sequence")
+        for point in points:
+            if not isinstance(point, CursorPoint):
+                raise ValueError(
+                    "points: expected CursorPoint entries, got "
+                    f"{type(point).__name__}"
+                )
+        if cancel_event is not None and not isinstance(
+            cancel_event, threading.Event
+        ):
+            raise ValueError("cancel_event: expected threading.Event or None")
+        self._poll()
+        note = getattr(self._failsafe, "note_commanded", None)
+        move_to: Callable[[int, int], None] = (
+            lambda x, y: self._mouse_call("move_to", x, y)
+        )
+        if self._safety is not None:
+            unguarded = move_to
+
+            def _guarded_move(x: int, y: int) -> None:
+                # Per-sample safety checkpoint: the executor only watches
+                # cancel/interrupt events during its 2 ms sleep slices, so
+                # each commanded sample re-polls the E-stop latch.
+                self._poll()
+                unguarded(x, y)
+
+            move_to = _guarded_move
+        executor = TrajectoryExecutor(
+            move_to=move_to,
+            note_commanded=note if callable(note) else None,
+        )
+        try:
+            report = executor.execute(
+                list(points),
+                duration_sec,
+                bounds=bounds,
+                cancel_event=cancel_event,
+                interrupt_event=self._interrupted,
+            )
+        except _Cancelled as exc:
+            raise CobotInterruptedError(_TRIP_MESSAGE) from exc
+        except _Bounds as exc:
+            raise ActuatorError(str(exc)) from exc
+        return report.to_dict()
+
+    def type_natural(
+        self,
+        text: str,
+        base_wpm: int = 70,
+        *,
+        verify_fn: Optional[Callable[[], bool]] = None,
+    ) -> None:
+        """Type with organic cadence and syntactic micro-pauses.
+
+        ``verify_fn`` (when given) independently confirms the outcome
+        after typing -- entering text is not evidence the intended
+        document changed. A falsy return (or a raising check) becomes
+        :class:`ActuatorError`.
+        """
         text = check_str(text, field="text")
+        if verify_fn is not None and not callable(verify_fn):
+            raise ValueError("verify_fn: expected a callable or None")
         delays = plan_keystroke_delays(text, base_wpm)
         for char, pause in zip(text, delays):
             self._poll()
             self._key_call(char)
             self._wait(pause)
+        if verify_fn is not None:
+            from .desktop import verify_completion
 
-    def click_point(self, point: CursorPoint) -> None:
+            self._poll()
+            try:
+                ok = verify_fn()
+            except ActuatorError:
+                raise
+            except Exception as exc:
+                raise ActuatorError(
+                    "completion verification failed for type_natural: "
+                    f"verify_fn raised: {exc}"
+                ) from exc
+            verify_completion(bool(ok), operation="type_natural")
+
+    def click_point(
+        self,
+        point: CursorPoint,
+        *,
+        verify: bool = False,
+        tolerance: int = 2,
+    ) -> None:
         """Glide to the point, pause 80 ms, and click."""
-        self.move_cursor_smooth(point)
+        self.move_cursor_smooth(
+            point, verify=verify, tolerance=tolerance
+        )
         self._wait(0.08)
         self._poll()
         self._mouse_call("click")
@@ -595,6 +884,8 @@ class DesktopActuator:
         if cwd is not None:
             cwd = check_str(cwd, field="cwd")
         timeout_sec = _positive_seconds(timeout_sec, field="timeout_sec")
+        # Pre-execution gate: never spawn while interrupted or E-stopped.
+        self._poll()
         try:
             proc = subprocess.Popen(
                 list(command),
@@ -639,30 +930,114 @@ class DesktopActuator:
             raise
         return (proc.returncode, "".join(stdout_chunks), "".join(stderr_chunks))
 
-    def execute_plan(self, plan: ExecutionPlan) -> dict[str, Any]:
+    def execute_plan(
+        self,
+        plan: ExecutionPlan,
+        *,
+        target: Optional["TargetSpec | WindowInfo | str"] = None,
+        authorized: bool = True,
+        verify_fn: Optional[Callable[[], bool]] = None,
+    ) -> dict[str, Any]:
         """Execute a plan: run its terminal command, audit its labels.
 
         Action labels are recorded verbatim for the audit trail; the
         terminal command (when present) executes via :meth:`run_safe_command`
         after shell-free tokenizing. Trips propagate as raised errors.
+
+        With ``target`` set, the plan runs inside a validated focus
+        session: resolve -> companion preserve -> target activate ->
+        foreground verify -> command -> target revalidation (a changed
+        target invalidates the operation) -> optional ``verify_fn``
+        completion check -> companion restore. Without ``target`` the
+        legacy behavior is kept and ``plan.target_window`` stays an
+        audit label only.
         """
         if not isinstance(plan, ExecutionPlan):
             raise ValueError(
                 f"plan: expected ExecutionPlan, got {type(plan).__name__}"
             )
+        if verify_fn is not None and not callable(verify_fn):
+            raise ValueError("verify_fn: expected a callable or None")
+        authorized = check_bool(authorized, field="authorized")
+        # Pre-execution gate: a latched E-stop rejects the plan before any
+        # step runs, even for command-less audit-only plans.
+        self._poll()
         report: dict[str, Any] = {
             "actions": list(plan.actions),
             "target_window": plan.target_window,
             "terminal_exit": None,
             "terminal_stdout": "",
             "terminal_stderr": "",
+            "target_validated": False,
+            "focus_verified": False,
+            "completion_verified": False,
         }
-        if plan.terminal_command is not None:
-            tokens = split_command_line(plan.terminal_command)
-            if not tokens:
-                raise ValueError("terminal_command: tokenizes to nothing")
-            code, out, err = self.run_safe_command(tokens)
-            report["terminal_exit"] = code
-            report["terminal_stdout"] = out
-            report["terminal_stderr"] = err
+        if target is None:
+            self._run_plan_command(plan, report)
+            if verify_fn is not None:
+                report["completion_verified"] = self._run_verify_fn(
+                    verify_fn, "execute_plan"
+                )
+            return report
+
+        from .desktop import TargetSpec, WindowInfo
+
+        if isinstance(target, WindowInfo):
+            expected = target
+        elif isinstance(target, (TargetSpec, str)):
+            expected = self.resolve_target(target, operation="execute_plan")
+        else:
+            raise ValueError(
+                "target: expected TargetSpec, WindowInfo, str, or None; "
+                f"got {type(target).__name__}"
+            )
+        with self.focus_target(
+            expected.handle, operation="execute_plan"
+        ) as guard:
+            live = self.validate_target(
+                expected, authorized=authorized, operation="execute_plan"
+            )
+            report["target_validated"] = True
+            report["focus_verified"] = guard.verified
+            self._run_plan_command(plan, report)
+            # The target must still be the same window after the work:
+            # a mid-operation target change invalidates the outcome.
+            self.validate_target(
+                live, authorized=authorized, operation="execute_plan"
+            )
+            if verify_fn is not None:
+                report["completion_verified"] = self._run_verify_fn(
+                    verify_fn, "execute_plan"
+                )
         return report
+
+    def _run_plan_command(
+        self, plan: ExecutionPlan, report: dict[str, Any]
+    ) -> None:
+        if plan.terminal_command is None:
+            return
+        tokens = split_command_line(plan.terminal_command)
+        if not tokens:
+            raise ValueError("terminal_command: tokenizes to nothing")
+        code, out, err = self.run_safe_command(tokens)
+        report["terminal_exit"] = code
+        report["terminal_stdout"] = out
+        report["terminal_stderr"] = err
+
+    def _run_verify_fn(
+        self, verify_fn: Callable[[], bool], operation: str
+    ) -> bool:
+        from .desktop import verify_completion
+
+        self._poll()
+        try:
+            ok = verify_fn()
+        except ActuatorError:
+            raise
+        except Exception as exc:
+            raise ActuatorError(
+                f"completion verification failed for {operation}: "
+                f"verify_fn raised: {exc}"
+            ) from exc
+        verify_completion(bool(ok), operation=operation)
+        return True

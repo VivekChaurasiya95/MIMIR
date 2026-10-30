@@ -6,7 +6,15 @@ headless tests assert the values stay in sync with the production spec.
 
 from __future__ import annotations
 
-__all__ = ["PORCELAIN", "TAB_DEFS", "qt_stylesheet"]
+__all__ = [
+    "ACCENTS",
+    "PORCELAIN",
+    "PORCELAIN_DARK",
+    "TAB_DEFS",
+    "normalize_accent",
+    "normalize_theme",
+    "qt_stylesheet",
+]
 
 #: Production palette (desktop_app/DESIGN.md 3.1). The ``PORCELAIN`` name is
 #: kept for API stability; values follow the slate/indigo/lavender system.
@@ -52,6 +60,156 @@ PORCELAIN: dict[str, str] = {
 
 #: Six production surfaces (desktop_app/DESIGN.md section 2).
 #: Each entry: (tab_id, title, subtitle, core modules).
+
+#: Slate-midnight dark palette: same token keys as :data:`PORCELAIN`
+#: so every QSS rule below re-themes by switching the token source.
+PORCELAIN_DARK: dict[str, str] = {
+    "bg_app": "#0F172A",
+    "bg_surface": "#1E293B",
+    "bg_subtle": "#182339",
+    "bg_nav_active": "#1E1B4B",
+    "bg_hover": "#273349",
+    "bg_pressed": "#334155",
+    "bg_disabled": "#334155",
+    "text_heading": "#F1F5F9",
+    "text_serif_hero": "#F8FAFC",
+    "text_body": "#CBD5E1",
+    "text_muted": "#94A3B8",
+    "text_faint": "#64748B",
+    "text_link": "#60A5FA",
+    "border_hairline": "#263449",
+    "border_subtle": "#334155",
+    "border_focus": "#818CF8",
+    "status_green_bg": "#064E3B",
+    "status_green_text": "#6EE7B7",
+    "status_purple_bg": "#4C1D95",
+    "status_purple_text": "#D8B4FE",
+    "status_blue_bg": "#1E3A8A",
+    "status_blue_text": "#93C5FD",
+    "status_neutral_bg": "#334155",
+    "status_neutral_text": "#CBD5E1",
+    "status_red_bg": "#7F1D1D",
+    "status_red_text": "#FCA5A5",
+    "status_amber_bg": "#78350F",
+    "status_amber_text": "#FCD34D",
+    "accent_primary": "#818CF8",
+    "accent_primary_hover": "#6366F1",
+    "accent_pill_lavender": "#312E81",
+    "nav_active_text": "#C7D2FE",
+}
+
+#: Accent overrides for the five swatches in Settings → Appearance.
+#: Each accent ships a light and a dark token set; "Indigo" reproduces
+#: the signature spec values exactly.
+ACCENTS: dict[str, dict[str, dict[str, str]]] = {
+    "Indigo": {
+        "light": {
+            "accent_primary": "#6366F1",
+            "accent_primary_hover": "#4F46E5",
+            "accent_pill_lavender": "#ECEBFA",
+            "nav_active_text": "#4338CA",
+            "bg_nav_active": "#F0EFFF",
+            "border_focus": "#6366F1",
+        },
+        "dark": {
+            "accent_primary": "#818CF8",
+            "accent_primary_hover": "#6366F1",
+            "accent_pill_lavender": "#312E81",
+            "nav_active_text": "#C7D2FE",
+            "bg_nav_active": "#1E1B4B",
+            "border_focus": "#818CF8",
+        },
+    },
+    "Lavender": {
+        "light": {
+            "accent_primary": "#8B5CF6",
+            "accent_primary_hover": "#7C3AED",
+            "accent_pill_lavender": "#F3E8FF",
+            "nav_active_text": "#6D28D9",
+            "bg_nav_active": "#F5F0FF",
+            "border_focus": "#8B5CF6",
+        },
+        "dark": {
+            "accent_primary": "#A78BFA",
+            "accent_primary_hover": "#8B5CF6",
+            "accent_pill_lavender": "#4C1D95",
+            "nav_active_text": "#DDD6FE",
+            "bg_nav_active": "#2E1065",
+            "border_focus": "#A78BFA",
+        },
+    },
+    "Sage": {
+        "light": {
+            "accent_primary": "#059669",
+            "accent_primary_hover": "#047857",
+            "accent_pill_lavender": "#D1FAE5",
+            "nav_active_text": "#065F46",
+            "bg_nav_active": "#ECFDF5",
+            "border_focus": "#059669",
+        },
+        "dark": {
+            "accent_primary": "#34D399",
+            "accent_primary_hover": "#10B981",
+            "accent_pill_lavender": "#064E3B",
+            "nav_active_text": "#A7F3D0",
+            "bg_nav_active": "#022C22",
+            "border_focus": "#34D399",
+        },
+    },
+    "Sky": {
+        "light": {
+            "accent_primary": "#2563EB",
+            "accent_primary_hover": "#1D4ED8",
+            "accent_pill_lavender": "#DBEAFE",
+            "nav_active_text": "#1E40AF",
+            "bg_nav_active": "#EFF6FF",
+            "border_focus": "#2563EB",
+        },
+        "dark": {
+            "accent_primary": "#60A5FA",
+            "accent_primary_hover": "#3B82F6",
+            "accent_pill_lavender": "#1E3A8A",
+            "nav_active_text": "#BFDBFE",
+            "bg_nav_active": "#172554",
+            "border_focus": "#60A5FA",
+        },
+    },
+    "Amber": {
+        "light": {
+            "accent_primary": "#D97706",
+            "accent_primary_hover": "#B45309",
+            "accent_pill_lavender": "#FEF3C7",
+            "nav_active_text": "#92400E",
+            "bg_nav_active": "#FFFBEB",
+            "border_focus": "#D97706",
+        },
+        "dark": {
+            "accent_primary": "#FBBF24",
+            "accent_primary_hover": "#F59E0B",
+            "accent_pill_lavender": "#78350F",
+            "nav_active_text": "#FDE68A",
+            "bg_nav_active": "#451A03",
+            "border_focus": "#FBBF24",
+        },
+    },
+}
+
+
+def normalize_theme(theme: str) -> str:
+    """Map a theme label or id to ``"light"`` or ``"dark"``."""
+    text = (theme or "").strip().lower()
+    if "dark" in text or "midnight" in text or "slate" in text:
+        return "dark"
+    return "light"
+
+
+def normalize_accent(accent: str) -> str:
+    """Map an accent name to a known swatch (default ``"Indigo"``)."""
+    text = (accent or "").strip().lower()
+    for name in ACCENTS:
+        if name.lower() == text:
+            return name
+    return "Indigo"
 TAB_DEFS: tuple[tuple[str, str, str, str], ...] = (
     ("home", "Home", "Ambient status and instant exploration.",
      "mimir.ui.visor"),
@@ -68,16 +226,23 @@ TAB_DEFS: tuple[tuple[str, str, str, str], ...] = (
 )
 
 
-def qt_stylesheet() -> str:
+def qt_stylesheet(theme: str = "light", accent: str = "Indigo") -> str:
     """Render the production tokens as a Qt stylesheet string.
 
     Object names follow desktop_app/DESIGN.md section 6. Every bordered
     control is rounded; status is carried by soft tinted badges.
+    ``theme`` selects the ``"light"`` (Porcelain) or ``"dark"`` (Slate
+    Midnight) palette; ``accent`` selects one of the :data:`ACCENTS`
+    swatches. Defaults reproduce the signature spec exactly.
     """
-    p = PORCELAIN
+    dark = normalize_theme(theme) == "dark"
+    base = PORCELAIN_DARK if dark else PORCELAIN
+    p = dict(base)
+    p.update(ACCENTS[normalize_accent(accent)][
+        "dark" if dark else "light"])
     return f"""
 * {{
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: "Barlow Semi Condensed", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif;
 }}
 QMainWindow, QWidget#root {{ background: {p["bg_app"]}; }}
 QWidget#card {{
@@ -86,30 +251,55 @@ QWidget#card {{
   border-radius: 16px;
 }}
 QLabel#h1 {{
-  font-family: Georgia, 'Times New Roman', serif;
-  font-size: 28px;
-  font-weight: 500;
+  font-family: "Barlow Semi Condensed", "Segoe UI", sans-serif;
+  font-size: 26px;
+  font-weight: 700;
   color: {p["text_heading"]};
 }}
-QLabel#h2 {{ font-size: 15px; font-weight: 600; color: {p["text_heading"]}; }}
-QLabel#statvalue {{ font-size: 22px; font-weight: 700; color: {p["text_heading"]}; }}
+QLabel#h2 {{
+  font-family: "Barlow Semi Condensed", "Segoe UI", sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: {p["text_heading"]};
+}}
+QLabel#statvalue {{
+  font-family: "Bebas Neue", "Barlow Semi Condensed", sans-serif;
+  font-size: 28px;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+  color: {p["text_heading"]};
+}}
 QLabel#lede, QLabel#subtle {{ color: {p["text_body"]}; font-size: 14px; }}
 QLabel#muted {{ color: {p["text_muted"]}; font-size: 12px; }}
 QLabel#faint {{ color: {p["text_faint"]}; font-size: 12px; font-weight: 600; }}
 QLabel#ok {{ color: {p["status_green_text"]}; font-weight: 600; }}
 QLabel#err {{ color: {p["status_red_text"]}; font-weight: 600; }}
 QLabel#brand {{
-  font-size: 13px; font-weight: 700; letter-spacing: 2px; color: {p["text_heading"]};
+  font-family: "Caprasimo", "Cooper Black", "Fraunces", Georgia, serif;
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: -0.3px;
+  color: {p["text_heading"]};
 }}
 QLabel#hero_overline {{
-  font-size: 11px; font-weight: 700; letter-spacing: 1px; color: {p["text_muted"]};
+  font-family: "Bebas Neue", "Barlow Semi Condensed", sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 1.5px;
+  color: {p["text_muted"]};
 }}
 QLabel#hero_name {{
-  font-family: Georgia, 'Times New Roman', serif;
-  font-size: 38px; font-weight: 400; color: {p["text_serif_hero"]};
+  font-family: "Caprasimo", "Cooper Black", "Fraunces", Georgia, serif;
+  font-size: 34px;
+  font-weight: 400;
+  color: {p["text_serif_hero"]};
 }}
 QLabel#overline {{
-  font-size: 11px; font-weight: 700; letter-spacing: 1px; color: {p["text_muted"]};
+  font-family: "Bebas Neue", "Barlow Semi Condensed", sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 1.2px;
+  color: {p["text_muted"]};
 }}
 QPushButton#ink {{
   background: {p["text_heading"]}; color: white; border: 0;
@@ -251,15 +441,41 @@ QListWidget::item:selected {{
 }}
 QListWidget::item:hover {{ background: {p["bg_hover"]}; }}
 QListWidget#settings_nav {{
-  background: transparent; border: 0; padding: 0;
+  background: {p["bg_surface"]};
+  border: 1px solid {p["border_hairline"]};
+  border-radius: 16px;
+  padding: 8px;
 }}
 QListWidget#settings_nav::item {{
-  border-radius: 10px; padding: 10px 16px; color: {p["text_muted"]};
+  border-radius: 10px; padding: 12px 14px; color: {p["text_muted"]};
   font-weight: 500; font-size: 13px; margin-bottom: 4px;
+}}
+QListWidget#settings_nav::item:hover {{
+  background: {p["bg_hover"]}; color: {p["text_heading"]};
 }}
 QListWidget#settings_nav::item:selected {{
   background: {p["bg_nav_active"]}; color: {p["nav_active_text"]};
   font-weight: 600;
+}}
+QFrame#guide_banner {{
+  background: {p["bg_surface"]};
+  border: 1px solid {p["border_hairline"]};
+  border-radius: 16px;
+}}
+QLabel#guide_title {{
+  font-size: 15px; font-weight: 700; color: {p["text_heading"]};
+}}
+QLabel#guide_desc {{
+  font-size: 13px; color: {p["text_muted"]};
+}}
+QLabel#setting_label {{
+  font-size: 13px; font-weight: 600; color: {p["text_heading"]};
+}}
+QLabel#setting_help {{
+  font-size: 12px; color: {p["text_muted"]};
+}}
+QFrame#setting_row_box {{
+  background: transparent; border: 0;
 }}
 QFrame#status_card {{
   background: {p["bg_surface"]};

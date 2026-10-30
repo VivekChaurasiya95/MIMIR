@@ -179,6 +179,8 @@ class VoiceCoordinator:
         self,
         stt_backend: STTBackend = "whisper_local",
         tts_backend: TTSBackend = "edge_tts",
+        voice: str = "en-US-AriaNeural",
+        language: Optional[str] = None,
     ) -> None:
         if isinstance(stt_backend, str):
             if stt_backend not in _KNOWN_STT:
@@ -198,6 +200,9 @@ class VoiceCoordinator:
             raise VoiceError("tts_backend: expected a known name or callable")
         self.stt_backend = stt_backend
         self.tts_backend = tts_backend
+        self.voice = check_str(voice, field="voice")
+        self.language = (check_str(language, field="language")
+                         if language is not None else None)
         self._whisper_model = None
 
     def parse_intent(self, text: str) -> dict[str, str]:
@@ -268,20 +273,20 @@ class VoiceCoordinator:
             raise ValueError(f"{field}: expected a positive number of seconds")
         return float(value)
 
-    def _whisper_listen(self, timeout_sec: float) -> Optional[str]:
+    def capture_audio(self, timeout_sec: float = 5.0) -> Optional[bytes]:
+        """Capture one microphone phrase; returns wav bytes or None.
+
+        Split from :meth:`transcribe_wav_bytes` so the Whisper worker
+        (see :mod:`mimir.voice_action`) can transcribe asynchronously
+        instead of blocking the caller through capture + inference.
+        """
+        timeout_sec = self._positive_seconds(timeout_sec, field="timeout_sec")
         try:
             import speech_recognition as sr
         except ImportError:
             raise VoiceError(
                 "SpeechRecognition is required for microphone capture "
                 "(pip install SpeechRecognition; also needs PyAudio)"
-            ) from None
-        try:
-            import whisper
-        except ImportError:
-            raise VoiceError(
-                "openai-whisper is required for local transcription "
-                "(pip install openai-whisper)"
             ) from None
         recognizer = sr.Recognizer()
         try:
@@ -293,17 +298,19 @@ class VoiceCoordinator:
             return None
         except OSError as exc:
             raise VoiceError(f"microphone unavailable: {exc}") from None
-        if self._whisper_model is None:
-            self._whisper_model = whisper.load_model("tiny")
+        return audio.get_wav_data()
+
+    def transcribe_wav_bytes(self, data: bytes) -> Optional[str]:
+        """Transcribe wav audio with the cached Whisper tiny model."""
+        if not isinstance(data, bytes) or not data:
+            raise ValueError("data: expected non-empty wav bytes")
         import tempfile
 
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as handle:
-            handle.write(audio.get_wav_data())
+            handle.write(data)
             path = handle.name
         try:
-            result = self._whisper_model.transcribe(path)
-        except Exception as exc:
-            raise VoiceError(f"whisper transcription failed: {exc}") from exc
+            return self.transcribe_audio_file(path)
         finally:
             import os
 
@@ -311,8 +318,35 @@ class VoiceCoordinator:
                 os.unlink(path)
             except OSError:
                 pass
+
+    def transcribe_audio_file(self, path: str) -> Optional[str]:
+        """Transcribe one audio file; returns the text or None on silence."""
+        path = check_str(path, field="path")
+        try:
+            import whisper
+        except ImportError:
+            raise VoiceError(
+                "openai-whisper is required for local transcription "
+                "(pip install openai-whisper)"
+            ) from None
+        if self._whisper_model is None:
+            self._whisper_model = whisper.load_model("tiny")
+        try:
+            if self.language:
+                result = self._whisper_model.transcribe(
+                    path, language=self.language)
+            else:
+                result = self._whisper_model.transcribe(path)
+        except Exception as exc:
+            raise VoiceError(f"whisper transcription failed: {exc}") from exc
         text = (result.get("text") or "").strip()
         return text or None
+
+    def _whisper_listen(self, timeout_sec: float) -> Optional[str]:
+        wav = self.capture_audio(timeout_sec)
+        if wav is None:
+            return None
+        return self.transcribe_wav_bytes(wav)
 
     def _edge_speak(self, text: str) -> None:
         try:
@@ -328,7 +362,7 @@ class VoiceCoordinator:
 
         async def synthesize(path: str) -> None:
             await edge_tts.Communicate(
-                text, voice="en-US-AriaNeural"
+                text, voice=self.voice
             ).save(path)
 
         fd, path = tempfile.mkstemp(suffix=".mp3", prefix="mimir_voice_")
@@ -337,18 +371,80 @@ class VoiceCoordinator:
             asyncio.run(synthesize(path))
         except Exception as exc:
             raise VoiceError(f"edge-tts synthesis failed: {exc}") from exc
-        # Fire-and-forget playback through the OS default audio handler.
+        # Fire-and-forget playback through headless OS audio subsystem (no media player windows).
+        try:
+            _play_audio_headless(path)
+        except Exception as exc:
+            raise VoiceError(f"audio playback failed: {exc}") from exc
+
+
+def _play_audio_headless(path: str) -> None:
+    """Play audio in the background without opening external media player windows."""
+    import os
+    import threading
+
+    def _worker() -> None:
         try:
             if os.name == "nt":
-                os.startfile(path)  # noqa: PGH101 (Windows-only API)
+                import ctypes
+                import time
+
+                winmm = ctypes.windll.winmm
+                alias = f"habi_tts_{int(time.time() * 1000)}"
+                safe_path = path.replace("/", "\\")
+                res = winmm.mciSendStringW(
+                    f'open "{safe_path}" type mpegvideo alias {alias}', None, 0, None
+                )
+                if res == 0:
+                    winmm.mciSendStringW(f"play {alias} wait", None, 0, None)
+                    winmm.mciSendStringW(f"close {alias}", None, 0, None)
+                else:
+                    # Fallback to powershell background player if MCI fails
+                    subprocess.run(
+                        [
+                            "powershell",
+                            "-NoProfile",
+                            "-NonInteractive",
+                            "-Command",
+                            f"$p = New-Object System.Media.SoundPlayer; $p.SoundLocation='{safe_path}'; $p.PlaySync()",
+                        ],
+                        check=False,
+                        creationflags=0x08000000,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
             elif sys.platform == "darwin":
-                subprocess.run(["afplay", path], check=False)
-            else:
                 subprocess.run(
-                    ["xdg-open", path],
+                    ["afplay", path],
                     check=False,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
-        except Exception as exc:
-            raise VoiceError(f"audio playback failed: {exc}") from exc
+            else:
+                for cmd in [
+                    ["ffplay", "-nodisp", "-autoexit", path],
+                    ["mpg123", "-q", path],
+                    ["aplay", "-q", path],
+                ]:
+                    try:
+                        res = subprocess.run(
+                            cmd,
+                            check=False,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+                        if res.returncode == 0:
+                            break
+                    except FileNotFoundError:
+                        continue
+        except Exception:
+            pass
+        finally:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
+

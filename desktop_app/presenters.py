@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from mimir.episodes import BehavioralEpisode
 from mimir.principles import BehavioralPrinciple
+
+if TYPE_CHECKING:  # annotation-only names; never imported at runtime
+    from datetime import datetime
 
 __all__ = [
     "TIMEFRAMES",

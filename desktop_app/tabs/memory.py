@@ -11,6 +11,7 @@ from ._layout import (
     actions_row,
     badge,
     card,
+    functionality_banner,
     page,
     page_head,
 )
@@ -34,20 +35,51 @@ def build_memory_tab(state: AppState, status: Any) -> Any:
     _, _, _, QtWidgets = load_qt()
     root, layout = page()
     layout.addWidget(page_head(
-        "Memory", "What MIMIR knows about you.",
+        "Memory", "What Habitous knows about you.",
         "These are the principles learned from your work, with supporting evidence."))
 
+    layout.addWidget(functionality_banner(
+        "📖",
+        "Behavioral Principle Bank",
+        "Inspect and calibrate every coding standard, testing invariant, and architectural pattern "
+        "Habitous has abstracted from your work. Each rule is scored with epistemic confidence and verifiable evidence.",
+        pills=[("Epistemic Scoring", "confirmed"), ("Inspectable Traces", "learning"), ("Human Calibrated", "confirmed")],
+        icon_cls="icon_box_purple",
+    ))
+
     row = QtWidgets.QHBoxLayout()
-    row.setSpacing(10)
-    row.addStretch(1)
+    row.setSpacing(12)
     search_edit = QtWidgets.QLineEdit()
-    search_edit.setPlaceholderText("🔍 Search principles...")
-    search_edit.setFixedWidth(240)
+    search_edit.setPlaceholderText("🔍 Search principles by invariant or scope...")
+    search_edit.setMinimumWidth(320)
     category = QtWidgets.QComboBox()
-    category.setFixedWidth(90)
-    row.addWidget(search_edit)
+    category.setMinimumWidth(140)
+    row.addWidget(search_edit, 1)
     row.addWidget(category)
     layout.addLayout(row)
+
+    seed_row = QtWidgets.QHBoxLayout()
+    seed_row.setSpacing(12)
+    seed_row.addWidget(QtWidgets.QLabel("Demo persona:"))
+    persona_combo = QtWidgets.QComboBox()
+    persona_combo.setMinimumWidth(260)
+    try:
+        from ..personas import list_personas
+        for persona in list_personas():
+            persona_combo.addItem(
+                f"{persona['title']} — {persona['description']}",
+                persona["id"])
+    except ImportError:
+        persona_combo.addItem("Personas unavailable", "")
+    seed_btn = QtWidgets.QPushButton("Seed Demo Persona")
+    seed_btn.setObjectName("soft")
+    seed_btn.setToolTip(
+        "Populate Behavioral Memory with a rich developer profile "
+        "for demos on fresh machines.")
+    seed_row.addWidget(persona_combo, 1)
+    seed_row.addWidget(seed_btn)
+    seed_row.addStretch(1)
+    layout.addLayout(seed_row)
 
     stack = QtWidgets.QStackedWidget()
     list_page = QtWidgets.QWidget()
@@ -161,39 +193,25 @@ def build_memory_tab(state: AppState, status: Any) -> Any:
         count_note.setText(
             f"{len(principles)} principle(s)"
             + (" — click one to inspect its evidence." if principles else
-               " — Showing learned principles from your work sessions."))
+               " — learn your first ones below."))
+        count_note.setVisible(True)
         if not principles and not search_edit.text().strip():
-            showcase_principles = [
-                ("</>", "Prefers modular, independently testable components.", 4, 0.85, "Confirmed", "confirmed", "icon_box_purple"),
-                ("📄", "Writes clear, concise functions.", 3, 0.77, "Learning", "learning", "icon_box_blue"),
-                ("📁", "Organizes project structure by feature.", 2, 0.62, "Learning", "learning", "icon_box_blue"),
-                ("🔄", "Refactors for readability.", 2, 0.58, "Unconfirmed", "unconfirmed", "icon_box_neutral"),
-                ("💡", "Prefers simple, practical solutions.", 1, 0.51, "Learning", "learning", "icon_box_purple"),
-            ]
-            for glyph_char, invariant, sess_count, conf, label, kind, icon_cls in showcase_principles:
-                row_card = ClickableCard("principle_card")
-                lay = QtWidgets.QHBoxLayout(row_card)
-                lay.setContentsMargins(16, 12, 16, 12)
-                lay.setSpacing(14)
-                glyph = QtWidgets.QLabel(glyph_char)
-                glyph.setObjectName(icon_cls)
-                text = QtWidgets.QVBoxLayout()
-                text.setSpacing(2)
-                head = QtWidgets.QLabel(invariant)
-                head.setObjectName("h2")
-                head.setWordWrap(True)
-                meta = QtWidgets.QLabel(
-                    f"Observed in {sess_count} sessions · Confidence {conf:.2f}")
-                meta.setObjectName("muted")
-                text.addWidget(head)
-                text.addWidget(meta)
-                chevron = QtWidgets.QLabel(">")
-                chevron.setObjectName("faint")
-                lay.addWidget(glyph)
-                lay.addLayout(text, 1)
-                lay.addWidget(badge(label, kind))
-                lay.addWidget(chevron)
-                feed.addWidget(row_card)
+            empty_box, empty_lay = card()
+            empty_title = QtWidgets.QLabel("Behavioral Memory is empty")
+            empty_title.setObjectName("h2")
+            empty_hint = QtWidgets.QLabel(
+                "Observe a repository and press Learn to distill your "
+                "first principles — or seed a demo persona to explore "
+                "with realistic data right now.")
+            empty_hint.setObjectName("muted")
+            empty_hint.setWordWrap(True)
+            seed_now_btn = QtWidgets.QPushButton("Seed Demo Persona")
+            seed_now_btn.setObjectName("ink")
+            seed_now_btn.clicked.connect(on_seed)
+            empty_lay.addWidget(empty_title)
+            empty_lay.addWidget(empty_hint)
+            empty_lay.addLayout(actions_row(seed_now_btn))
+            feed.addWidget(empty_box)
             return
 
         for principle in principles:
@@ -290,6 +308,24 @@ def build_memory_tab(state: AppState, status: Any) -> Any:
         stack.setCurrentIndex(0)
         render()
 
+    def on_seed() -> None:
+        persona_id = persona_combo.currentData()
+        if not persona_id:
+            status.showMessage("No demo persona available.", 4000)
+            return
+        try:
+            from ..personas import get_persona, seed_persona
+            seeded = seed_persona(state.store, persona_id)
+            title = get_persona(persona_id)["title"]
+        except Exception as exc:
+            status.showMessage(f"Persona seeding failed: {exc}", 8000)
+            return
+        search_edit.clear()
+        render()
+        status.showMessage(
+            f"Seeded {len(seeded)} {title} principle(s) into Memory.", 5000)
+
+    seed_btn.clicked.connect(on_seed)
     search_edit.textChanged.connect(lambda _t: render())
     search_edit.returnPressed.connect(lambda: render())
     category.currentTextChanged.connect(lambda _t: render())

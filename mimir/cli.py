@@ -20,12 +20,16 @@ import threading
 import time
 from typing import Any, Optional, Sequence
 
+from .actions import VOICE_GRANTED_PERMISSIONS, ActionRegistry
 from .actor import ReplicationActor, ReplicationRequest
 from .actuator import DesktopActuator
+from .events import EventType, get_event_bus
+from .safety import SafetyController
 from .store import PrincipleStore
 from .telemetry import TelemetryError, observe_git_repo
 from .ui.visor import VisorController, VisorError, VisorState, run_visor
 from .voice import VoiceCoordinator, VoiceError
+from .voice_action import parse_structured_intent
 
 __all__ = ["main"]
 
@@ -132,12 +136,65 @@ def _cobot_respond(intent: str, store: PrincipleStore, text: str) -> str:
     return "I didn't catch that. Try 'status', 'push my code', 'sleep', or 'stop'."
 
 
+def _approve_via_registry(
+    phrase: str,
+    registry: ActionRegistry,
+    parser: VoiceCoordinator,
+) -> Optional[str]:
+    """Bind "go ahead" to one pending action (None: nothing pending).
+
+    Returns the speakable outcome (approval, denial reason, or
+    clarification) whenever pending work exists; None only when the
+    registry is empty (caller falls back to the legacy guidance) or
+    the pipeline itself is unavailable. Read-only until one specific
+    action authorizes — a confirmation never picks an operation.
+    """
+    try:
+        if not registry.list_pending():
+            return None
+        structured = parse_structured_intent(phrase, parser, registry)
+    except Exception:
+        return None
+    if (structured.needs_clarification
+            or not structured.target_action_id):
+        return structured.clarification or None
+    try:
+        outcome = registry.authorize(
+            structured.target_action_id,
+            authorization_type=(
+                structured.authorization_type
+                or "explicit_voice_confirmation"
+            ),
+            granted_permissions=VOICE_GRANTED_PERMISSIONS,
+        )
+    except Exception:
+        return None
+    if not outcome.ok:
+        return outcome.reason
+    spec = registry.get(outcome.action_id)
+    if spec is None:
+        return f"Approved: {outcome.action_id}."
+    where = spec.target or spec.file_or_element
+    return (f"Approved: {spec.operation}"
+            + (f" on {where}" if where else "") + ".")
+
+
 def _voice_loop(
     voice: VoiceCoordinator,
     controller: VisorController,
     store: PrincipleStore,
     actuator: DesktopActuator,
+    registry: Optional[ActionRegistry] = None,
+    safety: Optional[SafetyController] = None,
 ) -> int:
+    # ``voice`` may be a duck-typed double in tests (ScriptedVoice), so
+    # structured parsing uses a dedicated no-op coordinator: parsing is
+    # pure keyword logic, independent of any microphone/TTS backend.
+    parser = VoiceCoordinator(
+        stt_backend=lambda timeout: None,
+        tts_backend=lambda text: None,
+    )
+    registry = registry if registry is not None else ActionRegistry()
     while True:
         if actuator.interrupted:
             controller.set_state(VisorState.ALERT)
@@ -149,8 +206,27 @@ def _voice_loop(
         if phrase is None:
             continue
         intent = voice.parse_intent(phrase)["intent"]
+        try:
+            get_event_bus().emit(
+                EventType.INTENT_PARSED, "voice.intent_parser",
+                {"intent": intent, "text": phrase[:200]},
+            )
+        except Exception:
+            pass
         controller.set_state(VisorState.THINKING)
-        response = _cobot_respond(intent, store, phrase)
+        response: Optional[str] = None
+        if intent == "stop" and safety is not None:
+            # A spoken stop latches the run's E-stop (plan section 8);
+            # the farewell below still answers the operator.
+            try:
+                safety.trip(source="voice-stop",
+                            reason=phrase.strip()[:200])
+            except Exception:
+                pass
+        if intent == "approve":
+            response = _approve_via_registry(phrase, registry, parser)
+        if response is None:
+            response = _cobot_respond(intent, store, phrase)
         controller.set_state(VisorState.LISTENING)
         print(f"[heard:{intent}] {phrase}")
         voice.speak(response)
@@ -168,8 +244,14 @@ def _run_cobot_cmd(
     """Voice loop; ``voice``/``controller`` seams exist for headless tests."""
     voice = voice if voice is not None else VoiceCoordinator()
     controller = controller if controller is not None else VisorController()
+    # One safety latch + one pending-action registry per cobot run,
+    # shared by the voice loop and the actuator (plan sections 4 + 8).
+    safety = SafetyController()
+    registry = ActionRegistry(safety=safety)
     actuator = DesktopActuator(
-        human_override_callback=lambda: controller.set_state(VisorState.ALERT)
+        human_override_callback=lambda: controller.set_state(VisorState.ALERT),
+        event_bus=get_event_bus(),
+        safety=safety,
     )
     try:
         try:
@@ -185,7 +267,10 @@ def _run_cobot_cmd(
                 ":memory:"
             )
             try:
-                return _voice_loop(voice, controller, store, actuator)
+                return _voice_loop(
+                    voice, controller, store, actuator,
+                    registry=registry, safety=safety,
+                )
             finally:
                 store.close()
 
@@ -243,6 +328,16 @@ def _run_watch(args: argparse.Namespace) -> int:
         fresh = [e for e in episodes if e.source_ref not in seen]
         for episode in episodes:
             seen.add(episode.source_ref)
+        if fresh:
+            try:
+                get_event_bus().emit(
+                    EventType.GIT_CHANGED, "sensory.git_observer",
+                    {"repo": args.repo,
+                     "episode_ids": [e.id for e in fresh],
+                     "count": len(fresh)},
+                )
+            except Exception:
+                pass
         if first or fresh:
             print(
                 f"observed {len(episodes)} episode(s), "

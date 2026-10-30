@@ -115,10 +115,183 @@ class WidgetTest(unittest.TestCase):
                 controller.set_state(VisorState.DRIVING)
                 app.processEvents()
                 self.assertIn("#F59E0B", pill._dot.styleSheet())
-                self.assertEqual(pill.toolTip(), "MIMIR: Driving")
+                self.assertEqual(pill.toolTip(), "Habi: Driving")
                 controller.toggle_rest()
                 app.processEvents()
                 self.assertIn("#555555", pill._dot.styleSheet())
+            finally:
+                pill.close()
+                pill.deleteLater()
+        finally:
+            app.processEvents()
+
+    def test_widget_renders_personified_face(self):
+        name, _, QtWidgets = _qt_bindings()
+        controller = VisorController()
+        if name is None:
+            with self.assertRaisesRegex(VisorError, "PyQt6"):
+                create_visor_widget(controller)
+            return
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        try:
+            pill = create_visor_widget(controller)
+            try:
+                # Face paint state tracks the controller; the legacy dot
+                # stays as a hidden shim carrying the spec color.
+                self.assertEqual(pill._color, controller.color)
+                self.assertEqual(pill._state, controller.state)
+                self.assertIn(controller.color, pill._dot.styleSheet())
+                controller.set_state(VisorState.LISTENING)
+                app.processEvents()
+                self.assertEqual(pill._color, "#10B981")
+                self.assertEqual(pill._state, VisorState.LISTENING)
+                self.assertIn("#10B981", pill._dot.styleSheet())
+                self.assertEqual(pill.toolTip(), "Habi: Listening")
+            finally:
+                pill.close()
+                pill.deleteLater()
+        finally:
+            app.processEvents()
+
+    def test_widget_face_background_is_light(self):
+        name, _, QtWidgets = _qt_bindings()
+        if name is None:
+            self.skipTest("PyQt6/PySide6 not installed")
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        try:
+            pill = create_visor_widget(VisorController())
+            try:
+                pill.show()
+                app.processEvents()
+                shot = pill.grab().toImage()
+                w, h = shot.width(), shot.height()
+                for x, y in ((w // 4, h // 2), (3 * w // 4, h // 2),
+                             (w // 2, h // 5)):
+                    c = shot.pixelColor(x, y)
+                    self.assertGreater(c.red(), 200, (x, y))
+                    self.assertGreater(c.green(), 200, (x, y))
+                    self.assertGreater(c.blue(), 200, (x, y))
+            finally:
+                pill.close()
+                pill.deleteLater()
+        finally:
+            app.processEvents()
+
+    def test_widget_face_is_oval(self):
+        name, _, QtWidgets = _qt_bindings()
+        if name is None:
+            self.skipTest("PyQt6/PySide6 not installed")
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        try:
+            pill = create_visor_widget(VisorController())
+            try:
+                pill.show()
+                app.processEvents()
+                shot = pill.grab().toImage()
+                w, h = shot.width(), shot.height()
+                # Inside a rounded rect but outside the inscribed ellipse.
+                edge = shot.pixelColor(int(w * 0.16), int(h * 0.125))
+                self.assertLess(edge.alpha(), 30)
+                # Top-center stays solid face.
+                top = shot.pixelColor(w // 2, int(h * 0.125))
+                self.assertGreater(top.alpha(), 200)
+                self.assertGreater(top.red(), 200)
+            finally:
+                pill.close()
+                pill.deleteLater()
+        finally:
+            app.processEvents()
+
+    def test_visor_floats_and_drags(self):
+        name, QtCore, QtWidgets = _qt_bindings()
+        if name is None:
+            self.skipTest("PyQt6/PySide6 not installed")
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        try:
+            pill = create_visor_widget(VisorController())
+            try:
+                pill.show()
+                app.processEvents()
+                pill._motion_timer.stop()
+                # Idle float is alive but bounded.
+                self.assertEqual(pill._bob_dy(0.0), 0)
+                self.assertEqual(pill._bob_dy(1.5), 4)
+                self.assertEqual(pill._bob_dy(-1.5), -4)
+                # Drag moves the pill by the cursor delta.
+                class _Press:
+                    def __init__(self, x, y):
+                        self._p = QtCore.QPointF(float(x), float(y))
+
+                    def globalPosition(self):
+                        return self._p
+
+                base = pill.pos()
+                pill.mousePressEvent(
+                    _Press(base.x() + 20, base.y() + 20))
+                self.assertTrue(pill._dragging)
+                pill.mouseMoveEvent(
+                    _Press(base.x() + 60, base.y() + 40))
+                self.assertEqual(pill.pos().x(), base.x() + 40)
+                self.assertEqual(pill.pos().y(), base.y() + 20)
+                pill.mouseReleaseEvent(object())
+                self.assertFalse(pill._dragging)
+                self.assertEqual(pill._anchor, pill.pos())
+            finally:
+                pill.close()
+                pill.deleteLater()
+        finally:
+            app.processEvents()
+
+    def test_visor_auto_roam_permit_and_glide(self):
+        name, QtCore, QtWidgets = _qt_bindings()
+        if name is None:
+            self.skipTest("PyQt6/PySide6 not installed")
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        try:
+            pill = create_visor_widget(VisorController())
+            try:
+                pill.show()
+                app.processEvents()
+                pill._motion_timer.stop()
+                self.assertFalse(pill._auto_roam)
+                self.assertIsNone(pill._move_target)
+                pill.set_auto_roam(True)
+                self.assertTrue(pill._auto_roam)
+                pill.set_auto_roam(False)
+                self.assertFalse(pill._auto_roam)
+                # glide_to walks the anchor to the target over ticks.
+                pill._anchor = QtCore.QPoint(pill.pos())
+                target = QtCore.QPoint(pill._anchor.x() + 30,
+                                       pill._anchor.y())
+                pill.glide_to(target.x(), target.y())
+                for _ in range(15):
+                    pill._tick_motion()
+                self.assertEqual(pill._anchor, target)
+                self.assertIsNone(pill._move_target)
+            finally:
+                pill.close()
+                pill.deleteLater()
+        finally:
+            app.processEvents()
+
+    def test_visor_follow_mouse(self):
+        name, QtCore, QtWidgets = _qt_bindings()
+        if name is None:
+            self.skipTest("PyQt6/PySide6 not installed")
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        try:
+            pill = create_visor_widget(VisorController())
+            try:
+                pill.show()
+                app.processEvents()
+                pill._motion_timer.stop()
+                self.assertFalse(pill._follow_mouse)
+                pill.set_follow_mouse(True)
+                self.assertTrue(pill._follow_mouse)
+                # Ticking motion should gracefully execute without raising
+                pill._tick_motion()
+                pill.set_follow_mouse(False)
+                self.assertFalse(pill._follow_mouse)
             finally:
                 pill.close()
                 pill.deleteLater()

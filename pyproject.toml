@@ -9,12 +9,12 @@ description = "MIMIR: observation-driven behavioral intelligence (MVP first boun
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
-dependencies = []
+dependencies = ["pydantic>=2"]
 
 [project.optional-dependencies]
 # Embodiment hardware: live cursor/keys (pyautogui, pynput), visor (PyQt6),
 # neural speech (edge-tts, needs network), local STT (whisper + mic).
-# Everything else, including the full test suite, runs on the stdlib.
+# Core needs pydantic>=2 for event contracts; everything else stdlib.
 cobot = [
   "pyautogui>=0.9.0",
   "pynput>=1.7.0",
@@ -22,6 +22,21 @@ cobot = [
   "edge-tts>=6.1.0",
   "openai-whisper>=20250625",
   "SpeechRecognition>=3.10.0",
+  # Window management (plan section 9). Windows-only; the desktop
+  # backend degrades to a clear ActuatorError hint when it is absent.
+  "pywin32>=306; sys_platform=='win32'",
+  # Qt/asyncio integration (plan section 9). Optional: LoopOwner
+  # enforces single-loop ownership with or without it, and raises a
+  # clear IsolationError hint when qasync hosts are unavailable.
+  "qasync>=0.24",
+]
+# Live observation backends (plan section 9). All are optional: the core
+# uses stdlib fallbacks (polling snapshots, ast parsing, git subprocess)
+# when these packages are absent.
+observation = [
+  "watchdog>=4.0",
+  "tree-sitter>=0.21",
+  "GitPython>=3.1",
 ]
 
 [tool.setuptools.packages.find]

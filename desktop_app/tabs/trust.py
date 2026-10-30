@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..state import AppState
-from ._layout import ClickableCard, actions_row, card, page, page_head, toggle
+from ._layout import ClickableCard, actions_row, card, functionality_banner, page, page_head, toggle
 from ._qt import load_qt
 
 __all__ = ["build_trust_tab"]
@@ -25,10 +25,19 @@ def build_trust_tab(state: AppState, status: Any) -> Any:
         "Trust", "Your data, your control.",
         "Manage permissions, storage, and privacy settings."))
 
+    layout.addWidget(functionality_banner(
+        "🛡",
+        "Privacy, Boundaries & Data Sovereignty",
+        "Zero telemetry leaves your machine. All embeddings, sqlite stores, and reasoning scaffolds run "
+        "100% locally on your device with strict application boundaries and proactive secret redaction.",
+        pills=[("Zero Cloud Exfiltration", "confirmed"), ("100% Local SQLite", "confirmed"), ("Automatic Secret Redaction", "learning")],
+        icon_cls="icon_box_amber",
+    ))
+
     access_box, access_lay = card()
     access_title = QtWidgets.QLabel("Access")
     access_title.setObjectName("h2")
-    access_sub = QtWidgets.QLabel("Choose what MIMIR can observe and interact with.")
+    access_sub = QtWidgets.QLabel("Choose what Habitous can observe and interact with.")
     access_sub.setObjectName("muted")
     access_lay.addWidget(access_title)
     access_lay.addWidget(access_sub)
@@ -146,7 +155,6 @@ def build_trust_tab(state: AppState, status: Any) -> Any:
     filter_verdict.setObjectName("muted")
     filter_verdict.setWordWrap(True)
     filter_lay.addWidget(filter_verdict)
-    filter_box.setVisible(False)
     layout.addWidget(filter_box)
     layout.addStretch(1)
 
@@ -165,41 +173,15 @@ def build_trust_tab(state: AppState, status: Any) -> Any:
 
     def render_scopes() -> None:
         clear_scopes()
-        roots = list(state.prefs.last_roots)
+        roots = list(state.prefs.last_roots) or state.default_roots()
+        if not state.prefs.last_roots:
+            hint = QtWidgets.QLabel(
+                "No folders added yet — showing your current workspace. "
+                "Use “Add application” below to allow-list folders.")
+            hint.setObjectName("muted")
+            hint.setWordWrap(True)
+            scopes.addWidget(hint)
         inactive = set(state.prefs.inactive_roots)
-        if not roots:
-            apps = [
-                ("🟦", "VS Code", "D:\\Projects", True),
-                ("🌐", "Google Chrome", "Browsing activity (titles & structure)", True),
-                ("⌨", "Terminal / Command Line", "Commands and context (no sensitive content)", False),
-            ]
-            for i, (glyph_char, title_str, meta_str, on) in enumerate(apps):
-                if i > 0:
-                    div = QtWidgets.QFrame()
-                    div.setObjectName("row_divider")
-                    scopes.addWidget(div)
-                row = QtWidgets.QHBoxLayout()
-                row.setSpacing(12)
-                glyph = QtWidgets.QLabel(glyph_char)
-                glyph.setObjectName("h2")
-                text = QtWidgets.QVBoxLayout()
-                text.setSpacing(2)
-                title = QtWidgets.QLabel(title_str)
-                title.setObjectName("h2")
-                meta = QtWidgets.QLabel(meta_str)
-                meta.setObjectName("muted")
-                text.addWidget(title)
-                text.addWidget(meta)
-                switch = toggle(on)
-                row.addWidget(glyph)
-                row.addLayout(text, 1)
-                row.addWidget(switch)
-                scopes.addLayout(row)
-            div_end = QtWidgets.QFrame()
-            div_end.setObjectName("row_divider")
-            scopes.addWidget(div_end)
-            return
-
         for root_path in roots:
             row = QtWidgets.QHBoxLayout()
             row.setSpacing(12)

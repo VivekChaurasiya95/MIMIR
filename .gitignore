@@ -1,4 +1,47 @@
+# Environment & Secrets
 .env
 .env.*
-*/__pycache__
-mimir.egg-info/
+*.env
+
+# Python Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Local Databases & State
+*.db
+*.sqlite
+*.sqlite3
+mimir_memory.db
+mimir_replicate_*.db
+demo_memory.db
+
+# Audio & Temporary Media
+*.mp3
+*.wav
+*.ogg
+mimir_voice_*.mp3
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# Temporary & Build Directories
+build/
+dist/
+*.egg-info/
+tmp*/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# IDE & OS Artifacts
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

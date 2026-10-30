@@ -15,10 +15,14 @@ def load_qt() -> Any:
     except ImportError:
         pass
     try:
-        from PySide6 import QtCore, QtGui, QtWidgets
+        import importlib
+        pyside6 = importlib.import_module("PySide6")
+        QtCore = getattr(pyside6, "QtCore")
+        QtGui = getattr(pyside6, "QtGui")
+        QtWidgets = getattr(pyside6, "QtWidgets")
 
         return ("PySide6", QtCore, QtGui, QtWidgets)
-    except ImportError:
+    except (ImportError, AttributeError):
         pass
     raise ImportError(
         "PyQt6 (or PySide6) is required for the desktop app "

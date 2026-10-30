@@ -19,6 +19,7 @@ import sys
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
+from mimir.actions import VOICE_GRANTED_PERMISSIONS, ActionRegistry
 from mimir.actuator import (
     ActuatorError,
     CobotInterruptedError,
@@ -31,10 +32,12 @@ from mimir.principles import (
     ContextTrigger,
     EpistemicStatus,
 )
+from mimir.safety import SafetyController
 from mimir.store import PrincipleStore
 from mimir.telemetry import TelemetryError, observe_git_repo
 from mimir.ui.visor import VisorController, VisorState
 from mimir.voice import VoiceCoordinator, VoiceError
+from mimir.voice_action import parse_structured_intent
 
 USER_QUESTION = "Hey MIMIR, have you learned how I commit and push my code?"
 USER_APPROVAL = "Go ahead."
@@ -102,6 +105,14 @@ class DemoContext:
     visor: VisorController
     actuator: DesktopActuator
     log: list[str] = field(default_factory=list)
+    # One safety latch + one pending-action registry per demo run,
+    # shared by every scene's actuator (plan sections 4 + 8).
+    safety: SafetyController = field(default_factory=SafetyController)
+    registry: Optional[ActionRegistry] = None
+
+    def __post_init__(self) -> None:
+        if self.registry is None:
+            self.registry = ActionRegistry(safety=self.safety)
 
     def say(self, text: str) -> None:
         line = f"MIMIR: {text}"
@@ -222,25 +233,65 @@ def _drive_square(ctx: DemoContext) -> None:
 
 def scene_drive(ctx: DemoContext, repo: str) -> None:
     print("\n=== Scene 3: Compliant Driving ===", flush=True)
+    assert ctx.registry is not None  # built in DemoContext.__post_init__
+    spec = ctx.registry.propose(
+        "demo_drive",
+        target=repo,
+        reason="scripted golden-script drive (cursor square + git status)",
+        supporting_observations=("scene_observe", "scene_coordinate"),
+    )
+    print(f"[proposed {spec.action_id}: demo_drive on {repo}]", flush=True)
     approval = ctx.hear_user(USER_APPROVAL)
     print(f"[intent: {ctx.voice.parse_intent(approval)['intent']}]", flush=True)
-    ctx.visor.set_state(VisorState.DRIVING)
-    _drive_square(ctx)
-    print("[cursor glide complete]", flush=True)
-    code, out, _ = ctx.actuator.run_safe_command(
-        ["git", "-C", repo, "status", "--short"]
+    structured = parse_structured_intent(approval, ctx.voice, ctx.registry)
+    if (structured.needs_clarification
+            or not structured.target_action_id):
+        print(f"[confirmation unclear ({structured.clarification}); "
+              "drive skipped]", flush=True)
+        ctx.registry.cancel(spec.action_id, reason="unclear confirmation")
+        return
+    outcome = ctx.registry.authorize(
+        structured.target_action_id,
+        authorization_type=(
+            structured.authorization_type or "explicit_voice_confirmation"
+        ),
+        granted_permissions=VOICE_GRANTED_PERMISSIONS,
     )
-    print(f"[git status exit={code}]\n{out.strip() or '(clean)'}", flush=True)
-    if ctx.live and ctx.allow_write:
-        push_code, push_out, push_err = ctx.actuator.run_safe_command(
-            ["git", "-C", repo, "push"]
+    if not outcome.ok:
+        print(f"[not authorized ({outcome.reason}); drive skipped]",
+              flush=True)
+        return
+    print(f"[{outcome.reason}]", flush=True)
+    ctx.registry.mark_executing(spec.action_id)
+    ctx.visor.set_state(VisorState.DRIVING)
+    try:
+        _drive_square(ctx)
+        print("[cursor glide complete]", flush=True)
+        code, out, _ = ctx.actuator.run_safe_command(
+            ["git", "-C", repo, "status", "--short"]
         )
-        print(
-            f"[git push exit={push_code}] {push_out.strip()} {push_err.strip()}",
-            flush=True,
-        )
-    else:
-        print("[would run: git push (pass --allow-write to execute)]", flush=True)
+        print(f"[git status exit={code}]\n{out.strip() or '(clean)'}",
+              flush=True)
+        if ctx.live and ctx.allow_write:
+            push_code, push_out, push_err = ctx.actuator.run_safe_command(
+                ["git", "-C", repo, "push"]
+            )
+            print(
+                f"[git push exit={push_code}] "
+                f"{push_out.strip()} {push_err.strip()}",
+                flush=True,
+            )
+        else:
+            print("[would run: git push (pass --allow-write to execute)]",
+                  flush=True)
+    except CobotInterruptedError:
+        ctx.registry.fail(spec.action_id, reason="E-stop during demo drive")
+        raise
+    except ActuatorError as exc:
+        ctx.registry.fail(spec.action_id, reason=str(exc))
+        raise
+    ctx.registry.complete(spec.action_id)
+    print(f"[{spec.action_id}: completed]", flush=True)
 
 
 def _record_correction(ctx: DemoContext, correction: str) -> None:
@@ -286,6 +337,7 @@ def scene_estop_drill(ctx: DemoContext) -> None:
         mouse=trip_mouse,
         keyboard=None if ctx.live else DryKeyboard(),
         failsafe=None,
+        safety=ctx.safety,
     )
     if trip_mouse is not None:
         trip_mouse.trip = tripping.abort
@@ -297,6 +349,18 @@ def scene_estop_drill(ctx: DemoContext) -> None:
         ctx.say("Stopped. What was about to go wrong?")
         correction = ctx.hear_user(USER_CORRECTION)
         _record_correction(ctx, correction)
+        # The operator's correction doubles as deliberate
+        # reauthorization: clear the drill's latch so the run ends
+        # nominal. Pre-trip pending actions stay invalid by design.
+        tripping.reset()
+        try:
+            if ctx.safety.reset(
+                authorization=f"demo-user correction: {correction[:120]}",
+                actor="demo-user",
+            ):
+                print("[safety: stop cleared by user correction]", flush=True)
+        except Exception as exc:
+            print(f"[safety: resume refused ({exc})]", flush=True)
     else:
         print("[no trip: glide completed without interruption]", flush=True)
     finally:
@@ -335,10 +399,14 @@ def main(argv: Optional[list[str]] = None) -> int:
             f"[visor: {old.value} -> {new.value}]", flush=True
         )
     )
+    # One safety latch for the whole run; every scene's actuator gates
+    # on it, and the Scene 4 correction reauthorizes the resume.
+    safety = SafetyController()
     if args.live:
         voice = VoiceCoordinator()
         actuator = DesktopActuator(
-            human_override_callback=lambda: visor.set_state(VisorState.ALERT)
+            human_override_callback=lambda: visor.set_state(VisorState.ALERT),
+            safety=safety,
         )
     else:
         voice = VoiceCoordinator(
@@ -350,6 +418,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             mouse=DryMouse(),
             keyboard=DryKeyboard(),
             failsafe=DryFailsafe(),
+            safety=safety,
         )
     store = PrincipleStore(args.store)
     ctx = DemoContext(
@@ -359,6 +428,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         voice=voice,
         visor=visor,
         actuator=actuator,
+        safety=safety,
     )
     try:
         scene_observe(ctx, args.repo)

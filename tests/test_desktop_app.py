@@ -388,6 +388,71 @@ class VenvHopTest(unittest.TestCase):
                 self.assertIsNone(find_venv_python(tmp))
 
 
+class CobotVisorWidgetTest(unittest.TestCase):
+    def test_white_oval_and_state(self):
+        try:
+            from desktop_app.tabs._qt import load_qt
+            _, _, _, QtWidgets = load_qt()
+        except ImportError:
+            self.skipTest("PyQt6/PySide6 not installed")
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        _app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        from desktop_app.tabs._layout import CobotVisorWidget
+        face = CobotVisorWidget(width=80, height=52)
+        try:
+            face._timer.stop()
+            face.show()
+            _app.processEvents()
+            self.assertEqual(face._base_state, "resting")
+            face.set_state("observing")
+            self.assertEqual(face._base_state, "observing")
+            self.assertEqual(face._color, "#38BDF8")
+            face.set_state("thinking")
+            self.assertEqual(face._color, "#C084FC")
+            shot = face.grab().toImage()
+            self.assertFalse(shot.isNull())
+            self.assertEqual(shot.width(), face.width())
+            self.assertEqual(shot.height(), face.height())
+        finally:
+            face.close()
+            face.deleteLater()
+
+
+    def test_white_oval_pixels_and_float(self):
+        try:
+            from desktop_app.tabs._qt import load_qt
+            _, _, _, QtWidgets = load_qt()
+        except ImportError:
+            self.skipTest("PyQt6/PySide6 not installed")
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        _app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        from desktop_app.tabs._layout import CobotVisorWidget
+        face = CobotVisorWidget(width=80, height=52)
+        try:
+            face._timer.stop()
+            face._motion_timer.stop()
+            w = face.width()
+            pad, fh = face._float_pad, int(face._face_h)
+            face.show()
+            _app.processEvents()
+            shot = face.grab().toImage()
+            bg = shot.pixelColor(w // 5, pad + fh // 2)
+            self.assertGreater(bg.red(), 200)
+            self.assertGreater(bg.green(), 200)
+            self.assertGreater(bg.blue(), 200)
+            edge = shot.pixelColor(int(w * 0.16), pad + int(fh * 0.125))
+            self.assertLess(edge.alpha(), 30)
+            top = shot.pixelColor(w // 2, pad + int(fh * 0.125))
+            self.assertGreater(top.alpha(), 200)
+            self.assertGreater(top.red(), 200)
+            self.assertEqual(face._bob_dy(0.0), 0)
+            self.assertGreater(face._bob_dy(1.5), 0)
+            self.assertLess(face._bob_dy(-1.5), 0)
+        finally:
+            face.close()
+            face.deleteLater()
+
+
 class QtSmokeTest(unittest.TestCase):
     def test_main_window_builds_offscreen(self):
         try:
