@@ -11,11 +11,14 @@ from ..state import AppState
 from ._layout import (
     ClickableCard,
     CobotVisorWidget,
+    actions_row,
+    card,
     elevate,
     functionality_banner,
     overline,
     page,
 )
+from .observe import clean_observe_error
 from ._qt import load_qt
 
 __all__ = ["build_home_tab"]
@@ -127,6 +130,27 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
     top.addWidget(status_area)
     layout.addLayout(top)
 
+    home_error, home_error_lay = card()
+    home_error.setMaximumWidth(700)
+    home_error_title = QtWidgets.QLabel("Observation needs attention")
+    home_error_title.setObjectName("h2")
+    home_error_text = QtWidgets.QLabel("")
+    home_error_text.setObjectName("muted")
+    home_error_text.setWordWrap(True)
+    open_observe_btn = QtWidgets.QPushButton("Open Observe")
+    open_observe_btn.setObjectName("ink")
+    open_observe_btn.clicked.connect(lambda: navigate("observe"))
+    home_error_dismiss = QtWidgets.QPushButton("Dismiss")
+    home_error_dismiss.setObjectName("soft")
+    home_error_dismiss.clicked.connect(
+        lambda: home_error.setVisible(False))
+    home_error_lay.addWidget(home_error_title)
+    home_error_lay.addWidget(home_error_text)
+    home_error_lay.addLayout(
+        actions_row(open_observe_btn, home_error_dismiss))
+    home_error.setVisible(False)
+    layout.addWidget(home_error)
+
     layout.addWidget(functionality_banner(
         "✦",
         "Habitous Intelligent Developer Companion",
@@ -159,6 +183,18 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
     showcase_log.setPlaceholderText("Live showcase progress appears here.")
     showcase_log.setVisible(False)
     layout.addWidget(showcase_log)
+
+    showcase_progress = QtWidgets.QProgressBar()
+    showcase_progress.setRange(0, 4)
+    showcase_progress.setValue(0)
+    showcase_progress.setTextVisible(False)
+    showcase_progress.setFixedHeight(6)
+    showcase_progress.setMaximumWidth(700)
+    showcase_progress.setVisible(False)
+    layout.addWidget(showcase_progress)
+
+    SCENE_STEPS = {"1_observe": 1, "2_voice": 2, "3_drive": 3,
+                   "4_estop": 4, "complete": 4}
 
     explore_pill = QtWidgets.QFrame()
     explore_pill.setObjectName("explore_pill")
@@ -196,6 +232,11 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
     more.clicked.connect(lambda: navigate("replicate"))
     chips.addWidget(more)
     chips.addStretch(1)
+    ask_btn = QtWidgets.QPushButton("Ask →")
+    ask_btn.setObjectName("ink")
+    ask_btn.setFixedHeight(32)
+    ask_btn.setToolTip("Ask Habi about the text above (Enter)")
+    chips.addWidget(ask_btn)
     chips_wrap = QtWidgets.QWidget()
     chips_wrap.setMaximumWidth(700)
     cw_lay = QtWidgets.QHBoxLayout(chips_wrap)
@@ -215,8 +256,19 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
     reply = QtWidgets.QLabel("")
     reply.setObjectName("subtle")
     reply.setWordWrap(True)
+    reply_copy = QtWidgets.QPushButton("Copy reply")
+    reply_copy.setObjectName("soft")
+    reply_copy.setToolTip("Copy this reply to the clipboard")
+
+    def on_copy_reply() -> None:
+        if reply.text():
+            QtWidgets.QApplication.clipboard().setText(reply.text())
+            status.showMessage("Reply copied to clipboard.", 4000)
+
+    reply_copy.clicked.connect(on_copy_reply)
     rl.addWidget(reply_icon)
     rl.addWidget(reply, 1)
+    rl.addWidget(reply_copy)
     layout.addWidget(reply_box)
 
     kpi_row = QtWidgets.QHBoxLayout()
@@ -247,10 +299,54 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
 
     layout.addWidget(overline("WORKSPACE OVERVIEW"))
     kpi_row.addWidget(kpi("📖", "Habits learned", "memory", "icon_box_purple"))
-    kpi_row.addWidget(kpi("ᯤ", "Sessions watched", "observe", "icon_box_blue"))
+    kpi_row.addWidget(kpi("◉", "Sessions watched", "observe", "icon_box_blue"))
     kpi_row.addWidget(kpi("📈", "Confidence score", "memory", "icon_box_green"))
     kpi_row.addStretch(1)
     layout.addLayout(kpi_row)
+
+    layout.addWidget(overline("WHAT WOULD YOU LIKE TO DO?"))
+    dir_row = QtWidgets.QHBoxLayout()
+    dir_row.setSpacing(12)
+
+    def directory(icon: str, title: str, sub: str, target: str,
+                 icon_cls: str = "icon_box_purple") -> Any:
+        card_widget = ClickableCard("dir_card",
+                                    on_click=lambda: navigate(target))
+        card_widget.setMinimumHeight(84)
+        lay = QtWidgets.QHBoxLayout(card_widget)
+        lay.setContentsMargins(14, 10, 12, 10)
+        lay.setSpacing(10)
+        glyph = QtWidgets.QLabel(icon)
+        glyph.setObjectName(icon_cls)
+        text = QtWidgets.QVBoxLayout()
+        text.setSpacing(2)
+        head = QtWidgets.QLabel(title)
+        head.setObjectName("h2")
+        desc = QtWidgets.QLabel(sub)
+        desc.setObjectName("muted")
+        desc.setWordWrap(True)
+        text.addWidget(head)
+        text.addWidget(desc)
+        chevron = QtWidgets.QLabel(">")
+        chevron.setObjectName("faint")
+        lay.addWidget(glyph)
+        lay.addLayout(text, 1)
+        lay.addWidget(chevron)
+        return card_widget
+
+    dir_row.addWidget(directory("👁", "Observe",
+                                "Watch repos, learn your habits.",
+                                "observe", "icon_box_blue"))
+    dir_row.addWidget(directory("📖", "Memory",
+                                "Your standards, inspectable.",
+                                "memory", "icon_box_purple"))
+    dir_row.addWidget(directory("⧉", "Replicate",
+                                "Apply your style to new tasks.",
+                                "replicate", "icon_box_green"))
+    dir_row.addWidget(directory("🛡", "Trust",
+                                "Stays local, you're in control.",
+                                "trust", "icon_box_amber"))
+    layout.addLayout(dir_row)
     layout.addStretch(1)
 
     # Live worker refs (showcase + voice): kept alive for their lifetime.
@@ -289,10 +385,26 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
         kpi_cards[0].setText(str(stats["count"]))
         kpi_cards[1].setText(str(len(state.episodes)))
         kpi_cards[2].setText(f"{stats['avg_confidence']:.2f}")
+        try:
+            watch_btn.updateGeometry()
+        except Exception:
+            pass
+        try:
+            app_inst = QtWidgets.QApplication.instance()
+            pills = (app_inst.topLevelWidgets() if app_inst is not None
+                     else [])
+            floating = [w for w in pills
+                        if hasattr(w, "set_follow_mouse")]
+            shown = bool(floating) and floating[0].isVisible()
+            companion_btn.setText("Hide Habi" if shown
+                                  else "✨ Habi Companion")
+        except Exception:
+            pass
 
     def on_watch() -> None:
         if watcher.watching:
             watcher.stop()
+            home_error.setVisible(False)
             refresh_content()
             status.showMessage("Observation paused. Habi is resting.", 4000)
             return
@@ -310,13 +422,19 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
                 roots.append(repo)
         # Prefer the non-blocking first pass (the UI never freezes
         # on a slow repo); stub watchers in tests only implement start().
+        def _failed_start(message: str) -> None:
+            home_error_text.setText(clean_observe_error(message))
+            home_error.setVisible(True)
+            status.showMessage(
+                f"Couldn't start observing: {message}", 8000)
+
         start_async = getattr(watcher, "start_async", None)
         if start_async is None:
             ok, message = watcher.start(repo, roots)
             if not ok:
-                status.showMessage(
-                    f"Couldn't start observing: {message}", 8000)
+                _failed_start(message)
             else:
+                home_error.setVisible(False)
                 status.showMessage(
                     "Habitous active observation started for "
                     f"{Path(repo).name}.", 4000)
@@ -325,9 +443,9 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
 
         def _started(ok: bool, message: str) -> None:
             if not ok:
-                status.showMessage(
-                    f"Couldn't start observing: {message}", 8000)
+                _failed_start(message)
             else:
+                home_error.setVisible(False)
                 status.showMessage(
                     "Habitous active observation started for "
                     f"{Path(repo).name}.", 4000)
@@ -335,6 +453,15 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
             refresh_content()
 
         watch_btn.setEnabled(False)
+        watch_btn.setText("Starting…")
+        try:
+            watch_btn.updateGeometry()
+        except Exception:
+            pass
+        try:
+            visor_face.set_state("thinking")
+        except Exception:
+            pass
         status.showMessage("Starting observation…", 4000)
         start_async(repo, roots, 10, _started)
 
@@ -368,14 +495,20 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
                 pass
             refresh_content()
 
+        def _failed(message: str) -> None:
+            status.showMessage(f"Speech unavailable: {message}", 6000)
+            _over()
+
         worker.speak_started.connect(_started)
         worker.speak_finished.connect(_over)
-        worker.speak_error.connect(lambda _message: _over())
+        worker.speak_error.connect(_failed)
         worker.start()
 
     def on_ask() -> None:
         text = explore.text().strip()
         if not text:
+            status.showMessage("Type something to explore first.", 4000)
+            explore.setFocus()
             return
         parsed = state.parse_utterance(text)
         if parsed.get("intent") and parsed["intent"] not in ("unknown", None):
@@ -397,7 +530,10 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
             from ..voice_worker import create_listen_worker
         except ImportError:
             status.showMessage("Listening… speak now.", 4000)
+            prev = explore.placeholderText()
+            explore.setPlaceholderText("Listening… speak now.")
             ok, heard = state.try_listen(timeout_sec=6.0)
+            explore.setPlaceholderText(prev)
             if ok:
                 explore.setText(heard)
                 explore.setFocus()
@@ -406,12 +542,19 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
             return
         status.showMessage("Listening… speak now.", 6000)
         mic_btn.setEnabled(False)
+        prev_placeholder = explore.placeholderText()
+        explore.setPlaceholderText("Listening… speak now.")
+        try:
+            visor_face.set_state("listening")
+        except Exception:
+            pass
         worker = create_listen_worker(state.voice_coordinator(),
                                       timeout_sec=6.0, parent=root)
         _workers.append(worker)
 
         def _done(ok: bool, heard: str) -> None:
             mic_btn.setEnabled(True)
+            explore.setPlaceholderText(prev_placeholder)
             if ok:
                 explore.setText(heard)
                 explore.setFocus()
@@ -426,6 +569,7 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
                 worker.deleteLater()
             except Exception:
                 pass
+            refresh_content()
 
         worker.listen_finished.connect(_done)
         worker.start()
@@ -457,6 +601,9 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
         clean_exp = explanation.replace("MIMIR", "Habi")
         showcase_status.setText(clean_exp)
         status.showMessage(f"Showcase: {clean_exp}", 5000)
+        step = SCENE_STEPS.get(scene)
+        if step is not None:
+            showcase_progress.setValue(step)
 
     def on_showcase_visor(state_name: str) -> None:
         try:
@@ -467,6 +614,12 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
     def on_showcase_done(success: bool) -> None:
         showcase_btn.setEnabled(True)
         showcase_btn.setText("▶ Run Live Habi Showcase")
+        try:
+            showcase_btn.updateGeometry()
+        except Exception:
+            pass
+        if success:
+            showcase_progress.setValue(4)
         showcase_status.setText(
             "Showcase complete — Habi's new principles are in Memory."
             if success else "Showcase stopped early — see activity details.")
@@ -485,11 +638,27 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
         _showcase["runner"] = None
 
     def on_showcase() -> None:
+        runner = _showcase.get("runner")
+        if _showcase.get("thread") is not None and runner is not None:
+            try:
+                runner.cancel()
+            except Exception:
+                pass
+            showcase_btn.setEnabled(False)
+            showcase_btn.setText("■ Stopping…")
+            showcase_status.setText("Stopping the showcase…")
+            status.showMessage("Stopping showcase…", 3000)
+            return
         from ..showcase import ShowcaseRunner
-        showcase_btn.setEnabled(False)
-        showcase_btn.setText("■ Showcase running…")
+        showcase_btn.setText("■ Stop showcase")
+        try:
+            showcase_btn.updateGeometry()
+        except Exception:
+            pass
         showcase_log.clear()
         showcase_log.setVisible(True)
+        showcase_progress.setValue(0)
+        showcase_progress.setVisible(True)
         showcase_status.setText("Running the 4 golden scenes…")
         runner = ShowcaseRunner(state, speak_live=True)
         thread = QtCore.QThread(root)
@@ -506,8 +675,19 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
         _showcase["runner"] = runner
         thread.start()
 
+    live_timer = QtCore.QTimer(root)
+    live_timer.setInterval(3000)
+
+    def _live_tick() -> None:
+        if watcher.watching:
+            refresh_content()
+
+    live_timer.timeout.connect(_live_tick)
+    live_timer.start()
+
     watch_btn.clicked.connect(on_watch)
     explore.returnPressed.connect(on_ask)
+    ask_btn.clicked.connect(on_ask)
     mic_btn.clicked.connect(on_mic)
     showcase_btn.clicked.connect(on_showcase)
     root.refresh_content = refresh_content  # called by the shell on navigate

@@ -198,10 +198,32 @@ def build_settings_tab(state: AppState, status: Any) -> Any:
                  save_prefs()))
     language.currentTextChanged.connect(
         lambda text: (setattr(state.prefs, "language", text), save_prefs()))
-    launch_toggle.toggled.connect(
-        lambda on: (setattr(state.prefs, "start_on_launch", on), save_prefs()))
-    tray_toggle.toggled.connect(
-        lambda on: (setattr(state.prefs, "show_in_tray", on), save_prefs()))
+    def on_launch_changed(on: bool) -> None:
+        from ..autostart import set_autostart
+        ok, message = set_autostart(on)
+        state.prefs.start_on_launch = on if ok else False
+        if not ok and on:
+            blocked = launch_toggle.blockSignals(True)
+            launch_toggle.setChecked(False)
+            launch_toggle.blockSignals(blocked)
+        save_prefs(message)
+
+    def on_tray_changed(on: bool) -> None:
+        from ..tray import sync_tray
+        state.prefs.show_in_tray = on
+        save_prefs()
+        host = root.window()
+        tray = sync_tray(host, on) if host is not None else None
+        if on and tray is None:
+            status.showMessage(
+                "System tray unavailable here — "
+                "the window stays in the taskbar.", 6000)
+        elif on:
+            status.showMessage(
+                "Habitous will minimize to the system tray.", 4000)
+
+    launch_toggle.toggled.connect(on_launch_changed)
+    tray_toggle.toggled.connect(on_tray_changed)
     chime_toggle.toggled.connect(
         lambda on: (setattr(state.prefs, "chimes", on), save_prefs()))
 
@@ -213,7 +235,21 @@ def build_settings_tab(state: AppState, status: Any) -> Any:
             version = "1.0.0"
         version_label.setText(
             f"Version {version} — up to date via pip (pip install -U mimir).")
-        status.showMessage(f"MIMIR {version} is running.", 4000)
+        status.showMessage(f"Habitous {version} is running.", 4000)
+        box = QtWidgets.QMessageBox(root)
+        box.setWindowTitle("Check for updates")
+        box.setText(f"Habitous {version} is installed.")
+        box.setInformativeText(
+            "Habitous updates ship through pip (no background updater "
+            "phones home). To upgrade, run:\n\npip install -U mimir")
+        copy_btn = box.addButton(
+            "Copy upgrade command",
+            QtWidgets.QMessageBox.ButtonRole.ActionRole)
+        box.addButton(QtWidgets.QMessageBox.StandardButton.Ok)
+        box.exec()
+        if box.clickedButton() is copy_btn:
+            QtWidgets.QApplication.clipboard().setText("pip install -U mimir")
+            status.showMessage("Upgrade command copied.", 4000)
 
     try:
         import mimir as _mimir

@@ -67,14 +67,20 @@ def build_replicate_tab(state: AppState, status: Any) -> Any:
     conf_spin = QtWidgets.QDoubleSpinBox()
     conf_spin.setRange(0.0, 1.0)
     conf_spin.setSingleStep(0.05)
+    conf_spin.setDecimals(2)
     conf_spin.setValue(state.prefs.default_min_confidence)
-    conf_spin.setVisible(False)
+    conf_spin.setMaximumWidth(80)
+    conf_spin.setToolTip(
+        "Minimum principle confidence for this draft "
+        "(saved as the Model default)")
     generate_btn = QtWidgets.QPushButton("Generate →")
     generate_btn.setObjectName("generate_btn")
     target.addWidget(QtWidgets.QLabel("Project"))
     target.addWidget(project_combo, 1)
     target.addWidget(QtWidgets.QLabel("Use principles"))
     target.addWidget(principles_combo)
+    target.addWidget(QtWidgets.QLabel("Min conf"))
+    target.addWidget(conf_spin)
     target.addStretch(1)
     target.addWidget(generate_btn)
     prompt_lay.addLayout(target)
@@ -170,7 +176,29 @@ def build_replicate_tab(state: AppState, status: Any) -> Any:
         label = f"Auto-selected ({top_k})"
         index = principles_combo.findText(label)
         principles_combo.setCurrentIndex(index if index >= 0 else 1)
+        blocked = conf_spin.blockSignals(True)
         conf_spin.setValue(state.prefs.default_min_confidence)
+        conf_spin.blockSignals(blocked)
+
+    def on_conf_changed(value: float) -> None:
+        state.prefs.default_min_confidence = float(value)
+        try:
+            state.prefs.save()
+        except OSError:
+            pass
+
+    def open_task(task: dict) -> None:
+        """Reload a feed entry into the prompt for review or re-run."""
+        task_edit.setPlainText(task.get("title", ""))
+        project = (task.get("project") or "").strip()
+        if project:
+            index = project_combo.findText(project)
+            if index >= 0:
+                project_combo.setCurrentIndex(index)
+            else:
+                project_combo.setEditText(project)
+        task_edit.setFocus()
+        status.showMessage("Task loaded — press Generate to re-run.", 4000)
 
     def clear_chips() -> None:
         while applied_chips.count():
@@ -216,7 +244,8 @@ def build_replicate_tab(state: AppState, status: Any) -> Any:
         shown = tasks if show_all["on"] else tasks[:FEED_PREVIEW]
         for task in shown:
             done = task.get("verdict") == "Completed"
-            row = ClickableCard("task_row")
+            row = ClickableCard("task_row",
+                                on_click=lambda t=task: open_task(t))
             lay = QtWidgets.QHBoxLayout(row)
             lay.setContentsMargins(16, 12, 16, 12)
             lay.setSpacing(14)
@@ -688,6 +717,7 @@ def build_replicate_tab(state: AppState, status: Any) -> Any:
         worker.listen_finished.connect(_done)
         worker.start()
 
+    conf_spin.valueChanged.connect(on_conf_changed)
     generate_btn.clicked.connect(on_generate)
     copy_btn.clicked.connect(on_copy)
     drive_btn.clicked.connect(on_drive)

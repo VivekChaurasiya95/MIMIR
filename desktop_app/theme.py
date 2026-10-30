@@ -498,13 +498,15 @@ QFrame#kpi_card {{
 QLabel#kpi_number {{
   font-size: 22px; font-weight: 700; color: {p["text_heading"]};
 }}
-QFrame#session_row, QFrame#principle_card, QFrame#task_row, QFrame#scope_row, QFrame#action_card {{
+QFrame#session_row, QFrame#principle_card, QFrame#task_row, QFrame#scope_row, QFrame#action_card,
+QFrame#dir_card, QFrame#data_row {{
   background: {p["bg_surface"]};
   border: 1px solid {p["border_hairline"]};
   border-radius: 16px;
 }}
 QFrame#session_row:hover, QFrame#principle_card:hover, QFrame#task_row:hover,
-QFrame#scope_row:hover, QFrame#action_card:hover, QFrame#kpi_card:hover {{
+QFrame#scope_row:hover, QFrame#action_card:hover, QFrame#kpi_card:hover,
+QFrame#dir_card:hover, QFrame#data_row:hover {{
   border-color: {p["border_subtle"]};
 }}
 QLabel#icon_box_purple {{
@@ -598,6 +600,13 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
 }}
 QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
   background: none;
+}}
+QProgressBar {{
+  background: {p["bg_hover"]}; border: 0; border-radius: 3px;
+  min-height: 6px; max-height: 6px; text-align: center;
+}}
+QProgressBar::chunk {{
+  background: {p["accent_primary"]}; border-radius: 3px;
 }}
 QStatusBar {{ color: {p["text_muted"]}; font-size: 11px; }}
 QToolTip {{

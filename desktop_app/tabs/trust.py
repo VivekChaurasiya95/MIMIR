@@ -2,13 +2,35 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from ..state import AppState
 from ._layout import ClickableCard, actions_row, card, functionality_banner, page, page_head, toggle
 from ._qt import load_qt
 
-__all__ = ["build_trust_tab"]
+__all__ = ["build_trust_tab", "reveal_path", "storage_folder"]
+
+
+def storage_folder(store_path: str) -> str | None:
+    """Containing folder of a file-backed store, else None."""
+    if not store_path or store_path == ":memory:":
+        return None
+    try:
+        parent = Path(store_path).expanduser().resolve().parent
+    except OSError:
+        return None
+    return str(parent) if parent.is_dir() else None
+
+
+def reveal_path(folder: str) -> bool:
+    """Open a folder in the system file manager. Returns success."""
+    try:
+        _, QtCore, QtGui, _ = load_qt()
+        url = QtCore.QUrl.fromLocalFile(folder)
+        return bool(QtGui.QDesktopServices.openUrl(url))
+    except Exception:
+        return False
 
 SAMPLE = (
     "deploy.sh:\n"
@@ -74,43 +96,59 @@ def build_trust_tab(state: AppState, status: Any) -> Any:
     data_rows = QtWidgets.QVBoxLayout()
     data_rows.setSpacing(10)
 
-    # Row 1: Storage location
-    r1 = QtWidgets.QHBoxLayout()
-    r1_icon = QtWidgets.QLabel("🗄")
-    r1_icon.setObjectName("h2")
-    r1_label = QtWidgets.QLabel("Storage location")
-    r1_label.setObjectName("h2")
-    r1_val = QtWidgets.QLabel("Local (This device)")
-    r1_val.setObjectName("muted")
-    r1_chev = QtWidgets.QLabel(">")
-    r1_chev.setObjectName("faint")
-    r1.addWidget(r1_icon)
-    r1.addWidget(r1_label)
-    r1.addStretch(1)
-    r1.addWidget(r1_val)
-    r1.addWidget(r1_chev)
-    data_rows.addLayout(r1)
+    def reveal_storage() -> None:
+        folder = storage_folder(state.store_path)
+        if folder is None:
+            status.showMessage(
+                "Memory store is in-memory — nothing to reveal.", 4000)
+            return
+        if reveal_path(folder):
+            status.showMessage(f"Opened {folder}.", 4000)
+        else:
+            status.showMessage(f"Could not open {folder}.", 8000)
+
+    def show_retention() -> None:
+        box = QtWidgets.QMessageBox(root)
+        box.setWindowTitle("Retention policy")
+        box.setText("Habitous keeps learned principles until you delete them.")
+        box.setInformativeText(
+            "Nothing expires automatically and nothing leaves this "
+            "device. Use “Clear all learned data” below to wipe "
+            "everything.")
+        box.exec()
+
+    def data_row(icon: str, label: str, value: str,
+                 on_click: Any) -> Any:
+        row_card = ClickableCard("data_row", on_click=on_click)
+        lay = QtWidgets.QHBoxLayout(row_card)
+        lay.setContentsMargins(12, 10, 12, 10)
+        lay.setSpacing(12)
+        glyph = QtWidgets.QLabel(icon)
+        glyph.setObjectName("h2")
+        title = QtWidgets.QLabel(label)
+        title.setObjectName("h2")
+        val = QtWidgets.QLabel(value)
+        val.setObjectName("muted")
+        chev = QtWidgets.QLabel(">")
+        chev.setObjectName("faint")
+        lay.addWidget(glyph)
+        lay.addWidget(title)
+        lay.addStretch(1)
+        lay.addWidget(val)
+        lay.addWidget(chev)
+        return row_card
+
+    # Row 1: Storage location (click reveals the store folder)
+    data_rows.addWidget(data_row("🗄", "Storage location",
+                                 "Local (This device)", reveal_storage))
 
     div1 = QtWidgets.QFrame()
     div1.setObjectName("row_divider")
     data_rows.addWidget(div1)
 
-    # Row 2: Retention period
-    r2 = QtWidgets.QHBoxLayout()
-    r2_icon = QtWidgets.QLabel("🕒")
-    r2_icon.setObjectName("h2")
-    r2_label = QtWidgets.QLabel("Retention period")
-    r2_label.setObjectName("h2")
-    r2_val = QtWidgets.QLabel("Until you delete")
-    r2_val.setObjectName("muted")
-    r2_chev = QtWidgets.QLabel(">")
-    r2_chev.setObjectName("faint")
-    r2.addWidget(r2_icon)
-    r2.addWidget(r2_label)
-    r2.addStretch(1)
-    r2.addWidget(r2_val)
-    r2.addWidget(r2_chev)
-    data_rows.addLayout(r2)
+    # Row 2: Retention period (click explains the policy)
+    data_rows.addWidget(data_row("🕒", "Retention period",
+                                 "Until you delete", show_retention))
 
     div2 = QtWidgets.QFrame()
     div2.setObjectName("row_divider")
@@ -165,11 +203,17 @@ def build_trust_tab(state: AppState, status: Any) -> Any:
             pass
 
     def clear_scopes() -> None:
-        while scopes.count():
-            old = scopes.takeAt(0)
-            widget = old.widget() or (old.layout() and None)
-            if widget is not None:
-                widget.deleteLater()
+        def _clear(layout: Any) -> None:
+            while layout.count():
+                item = layout.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.deleteLater()
+                    continue
+                nested = item.layout()
+                if nested is not None:
+                    _clear(nested)
+        _clear(scopes)
 
     def render_scopes() -> None:
         clear_scopes()

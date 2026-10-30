@@ -474,5 +474,511 @@ class QtSmokeTest(unittest.TestCase):
         self.assertIsNotNone(window)
 
 
+class CleanObserveErrorTest(unittest.TestCase):
+    def test_dubious_ownership_mentions_trust_not_invalid(self):
+        from desktop_app.tabs.observe import clean_observe_error
+        msg = ("D:/repo: not a git repository (git rev-parse --show-toplevel "
+               "failed: fatal: detected dubious ownership in repository)")
+        cleaned = clean_observe_error(msg)
+        self.assertIn("ownership", cleaned.lower())
+        self.assertNotIn("not a valid", cleaned.lower())
+
+    def test_non_git_repo_says_invalid(self):
+        from desktop_app.tabs.observe import clean_observe_error
+        cleaned = clean_observe_error("/tmp/x: not a git repository")
+        self.assertIn("not a valid Git repository", cleaned)
+
+    def test_boundary_points_at_roots(self):
+        from desktop_app.tabs.observe import clean_observe_error
+        cleaned = clean_observe_error("y: outside whitelisted observation roots []")
+        self.assertIn("authorized", cleaned.lower())
+
+    def test_generic_parenthetical_trims_detail(self):
+        from desktop_app.tabs.observe import clean_observe_error
+        self.assertEqual(
+            clean_observe_error("Observation startup failed (git timeout)"),
+            "Observation startup failed")
+        self.assertEqual(clean_observe_error("boom"), "boom")
+
+
+class AutostartPureTest(unittest.TestCase):
+    def test_login_command_targets_desktop_module(self):
+        from desktop_app.autostart import login_command
+        cmd = login_command()
+        self.assertIn("-m desktop_app", cmd)
+        self.assertIn("python", cmd.lower())
+
+    def test_desktop_entry_shape(self):
+        from desktop_app.autostart import desktop_entry_text, login_command
+        entry = desktop_entry_text()
+        self.assertIn("[Desktop Entry]", entry)
+        self.assertIn(login_command(), entry)
+
+
+class _QtCase(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        try:
+            from desktop_app.tabs._qt import load_qt
+            _, cls.QtCore, _, cls.QtWidgets = load_qt()
+        except ImportError:
+            raise unittest.SkipTest("PyQt6/PySide6 not installed")
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        cls.app = (cls.QtWidgets.QApplication.instance()
+                   or cls.QtWidgets.QApplication([]))
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        from desktop_app import DesktopPrefs
+        self.addCleanup(setattr, DesktopPrefs, "save", DesktopPrefs.save)
+        path = str(Path(self._tmp.name) / "desktop.json")
+        orig = DesktopPrefs.save
+        DesktopPrefs.save = lambda self, p=path: orig(self, p)
+        self._roots = []
+
+    def tearDown(self):
+        for root in self._roots:
+            try:
+                root.close()
+                root.deleteLater()
+            except Exception:
+                pass
+        try:
+            self.app.processEvents()
+        except Exception:
+            pass
+
+    def _pump(self, ms=120):
+        import time
+        end = time.monotonic() + ms / 1000.0
+        while time.monotonic() < end:
+            self.app.processEvents()
+            time.sleep(0.01)
+        # A live event loop delivers DeferredDelete continuously; flush
+        # explicitly so re-rendered widgets read as production does.
+        try:
+            self.QtCore.QCoreApplication.sendPostedEvents(
+                None, self.QtCore.QEvent.Type.DeferredDelete)
+        except Exception:
+            pass
+
+    def _state(self, **prefs_kw):
+        from desktop_app import AppState, DesktopPrefs
+        state = AppState(store_path=":memory:")
+        state.prefs = DesktopPrefs(**prefs_kw)
+        self.addCleanup(state.close)
+        return state
+
+    def _status(self):
+        class _Status:
+            def __init__(self):
+                self.messages = []
+
+            def showMessage(self, text, timeout=0):
+                self.messages.append(text)
+        return _Status()
+
+    def _watcher(self):
+        import types
+        return types.SimpleNamespace(watching=False, last_error="")
+
+    def _is_connected(self, obj, signal):
+        mo = obj.metaObject()
+        idx = mo.indexOfSignal(signal)
+        self.assertGreaterEqual(idx, 0, f"no signal {signal}")
+        return bool(obj.isSignalConnected(mo.method(idx)))
+
+
+class HomeExtrasTest(_QtCase):
+    def _build(self, state):
+        from desktop_app.tabs.home import build_home_tab
+        from mimir.voice import VoiceCoordinator
+        orig = type(state).voice_coordinator
+        type(state).voice_coordinator = (
+            lambda self: VoiceCoordinator(stt_backend=lambda t: None,
+                                          tts_backend=lambda text: None))
+        self.addCleanup(setattr, type(state), "voice_coordinator", orig)
+        self._nav = []
+        status = self._status()
+        root = build_home_tab(state, self._nav.append, status,
+                              self._watcher())
+        self._roots.append(root)
+        self._status_stub = status
+        return root
+
+    def _explore(self, root):
+        for edit in root.findChildren(self.QtWidgets.QLineEdit):
+            if "explore" in (edit.placeholderText() or "").lower():
+                return edit
+        self.fail("explore bar not found")
+
+    def test_ask_button_answers(self):
+        state = self._state()
+        root = self._build(state)
+        ask = None
+        for btn in root.findChildren(self.QtWidgets.QPushButton):
+            if btn.text().strip().lower().startswith("ask"):
+                ask = btn
+        self.assertIsNotNone(ask, "explicit Ask button beside explore bar")
+        self._explore(root).setText("hello")
+        ask.click()
+        self._pump(400)
+        replies = [lbl.text() for lbl in
+                   root.findChildren(self.QtWidgets.QLabel)
+                   if lbl.text().startswith(f"{state.prefs.assistant_name}:")]
+        self.assertTrue(replies, "Ask shows a companion reply")
+
+    def test_ask_empty_hints(self):
+        state = self._state()
+        root = self._build(state)
+        ask = next(btn for btn in
+                   root.findChildren(self.QtWidgets.QPushButton)
+                   if btn.text().strip().lower().startswith("ask"))
+        ask.click()
+        self._pump()
+        self.assertTrue(
+            any("type something" in m.lower()
+                for m in self._status_stub.messages),
+            f"empty Ask hints, got {self._status_stub.messages}")
+
+    def test_directory_cards_navigate(self):
+        state = self._state()
+        root = self._build(state)
+        cards = root.findChildren(self.QtWidgets.QFrame, "dir_card")
+        self.assertEqual(len(cards), 4, "spec 5.1 action directory")
+        for card in cards:
+            self.assertTrue(self._is_connected(card, "clicked()"))
+            card.clicked.emit()
+        self.assertEqual(self._nav,
+                         ["observe", "memory", "replicate", "trust"])
+
+
+class HomeFeedbackTest(_QtCase):
+    def _build(self, state, watcher=None):
+        from desktop_app.tabs.home import build_home_tab
+        from mimir.voice import VoiceCoordinator
+        orig = type(state).voice_coordinator
+        type(state).voice_coordinator = (
+            lambda self: VoiceCoordinator(stt_backend=lambda t: None,
+                                          tts_backend=lambda text: None))
+        self.addCleanup(setattr, type(state), "voice_coordinator", orig)
+        self._nav = []
+        status = self._status()
+        root = build_home_tab(state, self._nav.append, status,
+                              watcher or self._watcher())
+        self._roots.append(root)
+        self._status_stub = status
+        return root
+
+    def _failing_watcher(self):
+        import types
+        return types.SimpleNamespace(
+            watching=False, last_error="",
+            start_async=lambda repo, roots, n, cb: cb(
+                False, "fatal: detected dubious ownership in repository"))
+
+    def test_watch_failure_shows_inline_error_card(self):
+        state = self._state()
+        root = self._build(state, self._failing_watcher())
+        watch = next(b for b in root.findChildren(self.QtWidgets.QPushButton)
+                     if b.objectName() == "start_obs_btn")
+        watch.click()
+        self._pump(300)
+        opener = next(
+            (b for b in root.findChildren(self.QtWidgets.QPushButton)
+             if b.text() == "Open Observe"),
+            None)
+        self.assertIsNotNone(opener, "inline error card with Open Observe")
+        card = opener.parentWidget()
+        while card is not None and card.objectName() != "card":
+            card = card.parentWidget()
+        self.assertIsNotNone(card, "error card widget found")
+        self.assertTrue(card.isVisibleTo(root),
+                        "error card must be visible after failure")
+        opener.click()
+        self._pump()
+        self.assertEqual(self._nav, ["observe"])
+
+    def test_showcase_progress_and_stop(self):
+        state = self._state()
+        root = self._build(state)
+        start = next(b for b in root.findChildren(self.QtWidgets.QPushButton)
+                     if "Showcase" in b.text())
+        bars = root.findChildren(self.QtWidgets.QProgressBar)
+        self.assertEqual(len(bars), 1, "showcase progress bar present")
+        start.click()
+        self._pump(200)
+        if "Stop" in start.text():
+            start.click()  # stop while running
+            self._pump(2500)
+        else:
+            self._pump(8000)
+        self.assertTrue(start.isEnabled())
+        self.assertIn("Run Live Habi Showcase", start.text())
+        self.assertLessEqual(bars[0].value(), bars[0].maximum())
+
+    def test_reply_copy_button(self):
+        state = self._state()
+        root = self._build(state)
+        explore = next(e for e in root.findChildren(self.QtWidgets.QLineEdit)
+                       if "explore" in (e.placeholderText() or "").lower())
+        explore.setText("hello")
+        ask = next(b for b in root.findChildren(self.QtWidgets.QPushButton)
+                   if b.text().strip().lower().startswith("ask"))
+        ask.click()
+        self._pump(400)
+        copy_btn = next(
+            (b for b in root.findChildren(self.QtWidgets.QPushButton)
+             if b.text() == "Copy reply"),
+            None)
+        self.assertIsNotNone(copy_btn, "reply needs a Copy button")
+        copy_btn.click()
+        self._pump()
+        clip = self.QtWidgets.QApplication.clipboard().text()
+        self.assertIn(f"{state.prefs.assistant_name}:", clip)
+
+    def test_live_refresh_timer_present(self):
+        state = self._state()
+        root = self._build(state)
+        timers = [t for t in root.findChildren(self.QtCore.QTimer)
+                  if t.interval() == 3000]
+        self.assertTrue(timers, "home refreshes while watching")
+
+    def test_no_tofu_glyphs(self):
+        import unicodedata
+        state = self._state()
+        root = self._build(state)
+        texts = []
+        for lbl in root.findChildren(self.QtWidgets.QLabel):
+            texts.append(lbl.text() or "")
+        for btn in root.findChildren(self.QtWidgets.QPushButton):
+            texts.append(btn.text() or "")
+        joined = "\n".join(texts)
+        risky = [ch for ch in joined
+                 if unicodedata.category(ch) == "Lo"
+                 and not unicodedata.name(ch, "").startswith(("LATIN", "CJK"))]
+        self.assertEqual(risky, [], f"unrenderable glyphs: {risky!r}")
+
+
+class ReplicateExtrasTest(_QtCase):
+    def _build(self, state):
+        from desktop_app.tabs.replicate import build_replicate_tab
+        status = self._status()
+        root = build_replicate_tab(state, status)
+        self._roots.append(root)
+        return root
+
+    def test_task_row_click_reopens_task(self):
+        state = self._state()
+        state.store.save(_principle())
+        state.prefs = state.prefs.record_task("Fix retries", "Proj",
+                                              "Completed")
+        root = self._build(state)
+        rows = root.findChildren(self.QtWidgets.QFrame, "task_row")
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(self._is_connected(rows[0], "clicked()"),
+                        "task row click must reopen the task")
+        rows[0].clicked.emit()
+        self._pump()
+        task = root.findChildren(self.QtWidgets.QTextEdit)[0]
+        self.assertIn("Fix retries", task.toPlainText())
+
+    def test_min_conf_spin_visible_and_persisted(self):
+        state = self._state()
+        root = self._build(state)
+        spins = root.findChildren(self.QtWidgets.QDoubleSpinBox)
+        visible = [s for s in spins if s.isVisibleTo(root)]
+        self.assertTrue(visible, "Min conf control must be visible")
+        visible[0].setValue(0.5)
+        self._pump()
+        self.assertAlmostEqual(state.prefs.default_min_confidence, 0.5)
+
+
+class TrustScopesTest(_QtCase):
+    def _build(self, state):
+        from desktop_app.tabs.trust import build_trust_tab
+        root = build_trust_tab(state, self._status())
+        self._roots.append(root)
+        return root
+
+    def test_refresh_never_duplicates_scopes(self):
+        state = self._state(last_roots=("/a", "/b"))
+        root = self._build(state)
+        boxes = root.findChildren(self.QtWidgets.QCheckBox)
+        self.assertEqual(len(boxes), 2)
+        root.refresh_content()
+        root.refresh_content()
+        self._pump()
+        self.assertEqual(len(root.findChildren(self.QtWidgets.QCheckBox)), 2)
+
+    def test_storage_and_retention_rows_wired(self):
+        state = self._state(last_roots=("/a",))
+        root = self._build(state)
+        rows = root.findChildren(self.QtWidgets.QFrame, "data_row")
+        self.assertEqual(len(rows), 2)
+        for row in rows:
+            self.assertTrue(self._is_connected(row, "clicked()"))
+
+
+class MemoryCategoryTest(_QtCase):
+    def _cat_principle(self, pid, category, confidence=0.65):
+        base = _principle(pid, confidence)
+        return BehavioralPrinciple(
+            id=base.id, name=base.name, category=category,
+            context_trigger=base.context_trigger,
+            latent_invariant=base.latent_invariant,
+            anti_patterns=base.anti_patterns,
+            epistemic_status=base.epistemic_status,
+            inspectable_traces=base.inspectable_traces,
+        )
+
+    def test_selection_survives_new_category(self):
+        from desktop_app.tabs.memory import build_memory_tab
+        state = self._state()
+        state.store.save(self._cat_principle("bp_cat_a", "architecture"))
+        state.store.save(self._cat_principle("bp_cat_b", "testing"))
+        root = build_memory_tab(state, self._status())
+        self._roots.append(root)
+        combos = [cb for cb in root.findChildren(self.QtWidgets.QComboBox)
+                  if "All" in [cb.itemText(i) for i in range(cb.count())]]
+        self.assertEqual(len(combos), 1)
+        category = combos[0]
+        category.setCurrentText("testing")
+        self._pump()
+        state.store.save(self._cat_principle("bp_cat_c", "workflow", 0.55))
+        root.refresh_content()
+        self._pump()
+        self.assertEqual(category.currentText(), "testing")
+
+
+class MemoryFeedbackTest(_QtCase):
+    def _build(self, state):
+        from desktop_app.tabs.memory import build_memory_tab
+        status = self._status()
+        root = build_memory_tab(state, status)
+        self._roots.append(root)
+        self._status_stub = status
+        return root
+
+    def _open_first(self, root):
+        cards = root.findChildren(self.QtWidgets.QFrame, "principle_card")
+        self.assertTrue(cards, "principle cards rendered")
+        cards[0].clicked.emit()
+        self._pump()
+        return cards[0]
+
+    def _btn(self, root, text):
+        return next(b for b in root.findChildren(self.QtWidgets.QPushButton)
+                    if b.text() == text)
+
+    def test_calibrate_reports_before_after(self):
+        state = self._state()
+        state.store.save(_principle("bp_fb_1", 0.70))
+        root = self._build(state)
+        self._open_first(root)
+        self._btn(root, "+ Reinforce").click()
+        self._pump()
+        self.assertTrue(
+            any("0.70" in m and "0.75" in m
+                for m in self._status_stub.messages),
+            f"reinforce reports 0.70 -> 0.75, got {self._status_stub.messages}")
+        self._btn(root, "− Contradict").click()
+        self._pump()
+        self.assertTrue(
+            any("0.75" in m and "0.65" in m
+                for m in self._status_stub.messages),
+            f"contradict reports 0.75 -> 0.65, got {self._status_stub.messages}")
+
+    def test_delete_confirms_and_reports(self):
+        state = self._state()
+        state.store.save(_principle("bp_fb_del", 0.70))
+        root = self._build(state)
+        self._open_first(root)
+        box = self.QtWidgets.QMessageBox
+        orig_exec = box.exec
+        box.exec = lambda self_: box.StandardButton.Cancel
+        self.addCleanup(setattr, box, "exec", orig_exec)
+        self._btn(root, "Delete").click()
+        self._pump()
+        self.assertEqual(len(state.list_principles()), 1,
+                         "cancel keeps the principle")
+        box.exec = lambda self_: box.StandardButton.Ok
+        self._btn(root, "Delete").click()
+        self._pump()
+        self.assertEqual(state.list_principles(), [])
+        self.assertTrue(any("delet" in m.lower()
+                            for m in self._status_stub.messages),
+                        "delete reports")
+
+    def test_no_matches_offers_clear_filters(self):
+        state = self._state()
+        state.store.save(_principle("bp_fb_s", 0.70))
+        root = self._build(state)
+        search = next(e for e in root.findChildren(self.QtWidgets.QLineEdit)
+                      if "Search principles" in (e.placeholderText() or ""))
+        search.setText("zzz-no-such-habit")
+        self._pump()
+        clear = next(
+            (b for b in root.findChildren(self.QtWidgets.QPushButton)
+             if b.text() == "Clear filters"),
+            None)
+        self.assertIsNotNone(clear, "no-match state offers Clear filters")
+        self.assertTrue(clear.isVisibleTo(root))
+        clear.click()
+        self._pump()
+        self.assertEqual(search.text(), "")
+        self.assertTrue(root.findChildren(self.QtWidgets.QFrame,
+                                          "principle_card"))
+
+    def test_confidence_meters_track_scores(self):
+        state = self._state()
+        state.store.save(_principle("bp_fb_m", 0.70))
+        root = self._build(state)
+        cards = root.findChildren(self.QtWidgets.QFrame, "principle_card")
+        self.assertEqual(len(cards), 1)
+        meters = cards[0].findChildren(self.QtWidgets.QProgressBar)
+        self.assertEqual(len(meters), 1, "card shows a confidence meter")
+        self.assertEqual(meters[0].value(), 70)
+        self._open_first(root)
+        detail_meters = [m for m in root.findChildren(
+            self.QtWidgets.QProgressBar) if m.isVisibleTo(root)]
+        self.assertTrue(detail_meters, "detail shows a confidence meter")
+        self.assertEqual(detail_meters[0].value(), 70)
+        self._btn(root, "+ Reinforce").click()
+        self._pump()
+        detail_meters = [m for m in root.findChildren(
+            self.QtWidgets.QProgressBar) if m.isVisibleTo(root)]
+        self.assertEqual(detail_meters[0].value(), 75)
+
+    def test_detail_refreshes_on_return(self):
+        state = self._state()
+        state.store.save(_principle("bp_fb_r", 0.70))
+        root = self._build(state)
+        self._open_first(root)
+        state.adjust_confidence("bp_fb_r", 0.10, "external")
+        root.refresh_content()
+        self._pump()
+        detail = root.findChildren(self.QtWidgets.QPlainTextEdit)[0]
+        self.assertIn("0.80", detail.toPlainText())
+        state.delete_principle("bp_fb_r")
+        root.refresh_content()
+        self._pump()
+        stack = root.findChild(self.QtWidgets.QStackedWidget)
+        self.assertEqual(stack.currentIndex(), 0,
+                         "deleted detail falls back to the list")
+
+
+class TrayBuilderTest(_QtCase):
+    def test_offscreen_returns_none(self):
+        from desktop_app.tray import sync_tray
+        window = self.QtWidgets.QWidget()
+        self._roots.append(window)
+        from desktop_app import DesktopPrefs
+        self.assertIsNone(sync_tray(window, DesktopPrefs()))
+
+
 if __name__ == "__main__":
     unittest.main()

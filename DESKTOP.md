@@ -21,12 +21,12 @@
 
 | Screen | Spec | Core wiring | Key actions |
 |---|---|---|---|
-| Home | DESIGN.md 5.1 | `VisorController`, `memory_stats`, `respond`, `try_listen` | Serif greeting, status card + Start/Stop, explore bar + mic + chips, KPI cards, action directory |
+| Home | DESIGN.md 5.1 | `VisorController`, `memory_stats`, `respond`, `try_listen` | Serif greeting, status card + Start/Stop, explore bar + mic + Ask + chips, KPI cards, action directory |
 | Observe | DESIGN.md 5.2 | `observe_git_repo`/`observe_new` → `infer_principles` → `save` | Watch banner, Sessions/Applications segmented, timeframe filter, session feed with badges, workspace card |
 | Memory | DESIGN.md 5.3 | `list_all`, `query_relevant`, `update_confidence`, `delete` | Search + category filter, principle cards with confidence badges, evidence drawer, calibrate/copy/delete |
-| Replicate | DESIGN.md 5.4 | `ReplicationActor.replicate` + `prefs.record_task` | Prompt panel + mic, project/principles targeting, Generate, guided output, persistent recent-tasks feed |
-| Trust | DESIGN.md 5.5 | `redact_text`, scope prefs, `clear_memory` | Watched-folder switches, storage/retention policy, confirmed emergency wipe, filter test |
-| Settings | DESIGN.md 5.6 | `DesktopPrefs`, extras probes, actuator dry-run | General/Voice/Model/Appearance/Shortcuts/Integrations panels, persisted to `~/.mimir/desktop.json` |
+| Replicate | DESIGN.md 5.4 | `ReplicationActor.replicate` + `prefs.record_task` | Prompt panel + mic, project/principles/min-conf targeting, Generate, guided output, clickable recent-tasks feed |
+| Trust | DESIGN.md 5.5 | `redact_text`, scope prefs, `clear_memory` | Watched-folder switches, clickable storage/retention rows, confirmed emergency wipe, filter test |
+| Settings | DESIGN.md 5.6 | `DesktopPrefs`, extras probes, actuator dry-run | General/Voice/Model/Appearance/Shortcuts/Integrations panels, persisted to `~/.habitous/desktop.json`; launch/tray switches drive real OS login items + tray icon |
 
 ## 3. Architecture
 

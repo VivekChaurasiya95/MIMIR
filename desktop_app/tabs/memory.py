@@ -114,8 +114,20 @@ def build_memory_tab(state: AppState, status: Any) -> Any:
     detail_text = QtWidgets.QPlainTextEdit()
     detail_text.setReadOnly(True)
     detail_text.setMinimumHeight(260)
+    detail_meter_row = QtWidgets.QHBoxLayout()
+    detail_meter_row.setSpacing(10)
+    detail_meter = QtWidgets.QProgressBar()
+    detail_meter.setRange(0, 100)
+    detail_meter.setValue(0)
+    detail_meter.setTextVisible(False)
+    detail_meter.setFixedHeight(8)
+    detail_meter_label = QtWidgets.QLabel("")
+    detail_meter_label.setObjectName("muted")
+    detail_meter_row.addWidget(detail_meter, 1)
+    detail_meter_row.addWidget(detail_meter_label)
     detail_box_lay.addWidget(detail_head)
     detail_box_lay.addLayout(detail_badge_row)
+    detail_box_lay.addLayout(detail_meter_row)
     detail_box_lay.addWidget(detail_text)
     detail_lay.addWidget(detail_box)
     act_row = QtWidgets.QHBoxLayout()
@@ -157,10 +169,20 @@ def build_memory_tab(state: AppState, status: Any) -> Any:
         cats = sorted({p.category for p in principles})
         wanted = ["All"] + cats
         if [category.itemText(i) for i in range(category.count())] != wanted:
+            previous = category.currentText()
             blocked = category.blockSignals(True)
             category.clear()
             category.addItems(wanted)
+            if previous in wanted:
+                category.setCurrentText(previous)
             category.blockSignals(blocked)
+
+    def _matches_query(principle: Any, tokens: list[str]) -> bool:
+        haystack = (
+            f"{principle.name} {principle.latent_invariant} "
+            f"{principle.category} {principle.context_trigger.scope}"
+        ).lower()
+        return any(token in haystack for token in tokens)
 
     def visible_principles() -> list:
         principles = all_principles()
@@ -168,10 +190,18 @@ def build_memory_tab(state: AppState, status: Any) -> Any:
         query = search_edit.text().strip()
         if query:
             try:
-                principles = state.search(query, top_k=50, min_confidence=0.0)
+                ranked = state.search(query, top_k=50, min_confidence=0.0)
             except Exception as exc:
                 status.showMessage(f"Search failed: {exc}", 8000)
-                principles = []
+                ranked = []
+            # The store ranks by similarity but never excludes; narrow to
+            # keyword hits so searching visibly filters the bank.
+            import re
+            tokens = [t for t in re.split(r"\W+", query.lower())
+                      if len(t) >= 3]
+            principles = ([p for p in ranked
+                           if _matches_query(p, tokens)]
+                          if tokens else ranked)
         chosen = category.currentText()
         if chosen and chosen != "All":
             principles = [p for p in principles if p.category == chosen]
@@ -184,18 +214,49 @@ def build_memory_tab(state: AppState, status: Any) -> Any:
             item = feed.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                widget.hide()
                 widget.deleteLater()
 
     def render() -> None:
         principles = visible_principles()
         current["principles"] = principles
         clear_feed()
-        count_note.setText(
-            f"{len(principles)} principle(s)"
-            + (" — click one to inspect its evidence." if principles else
-               " — learn your first ones below."))
+        filtered = bool(search_edit.text().strip()) or (
+            category.currentText() not in ("", "All"))
+        if principles:
+            tail = " — click one to inspect its evidence."
+        elif filtered:
+            tail = " — no matches for these filters."
+        else:
+            tail = " — learn your first ones below."
+        count_note.setText(f"{len(principles)} principle(s)" + tail)
         count_note.setVisible(True)
-        if not principles and not search_edit.text().strip():
+        if not principles:
+            if search_edit.text().strip() or category.currentText() not in (
+                    "", "All"):
+                no_box, no_lay = card()
+                no_title = QtWidgets.QLabel("No matching principles")
+                no_title.setObjectName("h2")
+                no_hint = QtWidgets.QLabel(
+                    "Nothing matches this search and category. "
+                    "Try different keywords or clear the filters.")
+                no_hint.setObjectName("muted")
+                no_hint.setWordWrap(True)
+                clear_btn = QtWidgets.QPushButton("Clear filters")
+                clear_btn.setObjectName("ink")
+
+                def _clear_filters() -> None:
+                    search_edit.clear()
+                    if category.findText("All") >= 0:
+                        category.setCurrentText("All")
+                    render()
+
+                clear_btn.clicked.connect(_clear_filters)
+                no_lay.addWidget(no_title)
+                no_lay.addWidget(no_hint)
+                no_lay.addLayout(actions_row(clear_btn))
+                feed.addWidget(no_box)
+                return
             empty_box, empty_lay = card()
             empty_title = QtWidgets.QLabel("Behavioral Memory is empty")
             empty_title.setObjectName("h2")
@@ -250,8 +311,15 @@ def build_memory_tab(state: AppState, status: Any) -> Any:
                 f"{principle.epistemic_status.supporting_episodes_count} "
                 f"sessions · Confidence {conf:.2f}")
             meta.setObjectName("muted")
+            meter = QtWidgets.QProgressBar()
+            meter.setRange(0, 100)
+            meter.setValue(int(round(conf * 100)))
+            meter.setTextVisible(False)
+            meter.setFixedHeight(6)
+            meter.setToolTip(f"Confidence {conf:.2f}")
             text.addWidget(head)
             text.addWidget(meta)
+            text.addWidget(meter)
             chevron = QtWidgets.QLabel(">")
             chevron.setObjectName("faint")
             lay.addWidget(glyph)
@@ -266,10 +334,17 @@ def build_memory_tab(state: AppState, status: Any) -> Any:
         while detail_badge_slot.count():
             old = detail_badge_slot.takeAt(0).widget()
             if old is not None:
+                old.hide()
                 old.deleteLater()
-        label, kind = confidence_badge(
-            principle.epistemic_status.confidence_score)
+        conf = principle.epistemic_status.confidence_score
+        label, kind = confidence_badge(conf)
         detail_badge_slot.addWidget(badge(label, kind))
+        detail_meter.setValue(int(round(conf * 100)))
+        detail_meter.setToolTip(f"Confidence {conf:.2f}")
+        detail_meter_label.setText(
+            f"{conf:.2f} · "
+            f"+{principle.epistemic_status.supporting_episodes_count}/"
+            f"−{principle.epistemic_status.contradictions_count}")
         detail_text.setPlainText(format_principle_detail(principle))
         stack.setCurrentIndex(1)
 
@@ -280,6 +355,7 @@ def build_memory_tab(state: AppState, status: Any) -> Any:
         principle = selected()
         if principle is None:
             return
+        before = principle.epistemic_status.confidence_score
         try:
             state.adjust_confidence(
                 principle.id, delta,
@@ -289,8 +365,11 @@ def build_memory_tab(state: AppState, status: Any) -> Any:
         except Exception as exc:
             status.showMessage(f"Calibration failed: {exc}", 8000)
             return
+        after = refreshed.epistemic_status.confidence_score
         open_detail(refreshed)
         render()
+        status.showMessage(
+            f"Confidence {before:.2f} → {after:.2f} ({delta:+.2f}).", 4000)
 
     def copy_rule() -> None:
         principle = selected()
@@ -303,10 +382,22 @@ def build_memory_tab(state: AppState, status: Any) -> Any:
         principle = selected()
         if principle is None:
             return
+        confirm = QtWidgets.QMessageBox(root)
+        confirm.setWindowTitle("Delete this principle?")
+        confirm.setText(f"“{principle.name}” will be permanently removed.")
+        confirm.setInformativeText("This cannot be undone.")
+        confirm.setStandardButtons(
+            QtWidgets.QMessageBox.StandardButton.Cancel
+            | QtWidgets.QMessageBox.StandardButton.Ok)
+        confirm.button(QtWidgets.QMessageBox.StandardButton.Ok).setText(
+            "Delete")
+        if confirm.exec() != QtWidgets.QMessageBox.StandardButton.Ok:
+            return
         state.delete_principle(principle.id)
         current["selected"] = None
         stack.setCurrentIndex(0)
         render()
+        status.showMessage("Principle deleted.", 4000)
 
     def on_seed() -> None:
         persona_id = persona_combo.currentData()
@@ -329,7 +420,8 @@ def build_memory_tab(state: AppState, status: Any) -> Any:
     search_edit.textChanged.connect(lambda _t: render())
     search_edit.returnPressed.connect(lambda: render())
     category.currentTextChanged.connect(lambda _t: render())
-    back_btn.clicked.connect(lambda: stack.setCurrentIndex(0))
+    back_btn.clicked.connect(
+        lambda: (stack.setCurrentIndex(0), render()))
     plus_btn.clicked.connect(lambda: adjust(0.05))
     minus_btn.clicked.connect(lambda: adjust(-0.10))
     copy_btn.clicked.connect(copy_rule)
@@ -337,6 +429,19 @@ def build_memory_tab(state: AppState, status: Any) -> Any:
 
     def refresh_content() -> None:
         if stack.currentIndex() == 0:
+            render()
+            return
+        sel = selected()
+        if sel is None:
+            stack.setCurrentIndex(0)
+            render()
+            return
+        fresh = [p for p in all_principles() if p.id == sel.id]
+        if fresh:
+            open_detail(fresh[0])
+        else:
+            current["selected"] = None
+            stack.setCurrentIndex(0)
             render()
 
     root.refresh_content = refresh_content

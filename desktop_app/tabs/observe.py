@@ -26,9 +26,31 @@ from ._layout import (
 )
 from ._qt import load_qt
 
-__all__ = ["build_observe_tab"]
+__all__ = ["build_observe_tab", "clean_observe_error"]
 
 FEED_CAP = 30
+
+
+def clean_observe_error(msg: str) -> str:
+    """Rewrite a raw observation failure as plain user guidance.
+
+    Qt-free so headless tests can pin the wording. Dubious-ownership
+    failures must read as an ownership/trust problem — never as "not a
+    git repository" — because the folder IS a valid repo.
+    """
+    low = msg.lower()
+    if "dubious ownership" in low:
+        return ("Git blocked this folder (dubious ownership). "
+                "Trust it below to allow observation.")
+    if "not a git repository" in low or "fatal: cannot change to" in low or "no such file" in low:
+        return "Selected folder is not a valid Git repository. Please pick a Git project folder."
+    if "outside whitelisted observation roots" in low:
+        return "This folder is outside your authorized workspace roots. Click Trust or select a project folder."
+    if "(" in msg and ")" in msg:
+        lead = msg.split("(")[0].strip()
+        if len(lead) > 10:
+            return lead
+    return msg
 
 
 def _session_badge(episode: Any, learned: set[str]) -> tuple[str, str]:
@@ -90,11 +112,9 @@ def build_observe_tab(state: AppState, status: Any,
     error_text = QtWidgets.QLabel("")
     error_text.setObjectName("muted")
     error_text.setWordWrap(True)
-    trust_btn = QtWidgets.QPushButton("Trust this folder & retry")
+    trust_btn = QtWidgets.QPushButton("Authorize & retry")
     trust_btn.setObjectName("ink")
-    trust_btn.setToolTip(
-        "Runs: git config --global --add safe.directory <repo> "
-        "(asks first), then retries.")
+    trust_btn.setToolTip("Authorize this folder and retry observation.")
     dismiss_btn = QtWidgets.QPushButton("Dismiss")
     dismiss_btn.setObjectName("soft")
     error_lay.addWidget(error_title)
@@ -190,6 +210,15 @@ def build_observe_tab(state: AppState, status: Any,
     repo_row.addWidget(repo_edit, 1)
     repo_row.addWidget(repo_browse)
 
+    repo_status_lbl = QtWidgets.QLabel("")
+    repo_status_lbl.setObjectName("muted")
+    repo_status_lbl.setWordWrap(True)
+
+    repo_col = QtWidgets.QVBoxLayout()
+    repo_col.setSpacing(4)
+    repo_col.addLayout(repo_row)
+    repo_col.addWidget(repo_status_lbl)
+
     commits_spin = QtWidgets.QSpinBox()
     commits_spin.setRange(1, 100)
     commits_spin.setValue(10)
@@ -200,7 +229,7 @@ def build_observe_tab(state: AppState, status: Any,
     ws_box.addWidget(setting_row(
         "Target Git Repository",
         "Select the project directory containing your Git commit history.",
-        repo_row,
+        repo_col,
     ))
     ws_box.addWidget(setting_row(
         "Commit Analysis Depth",
@@ -219,6 +248,11 @@ def build_observe_tab(state: AppState, status: Any,
     view_btn.setFixedHeight(34)
     view_btn.setEnabled(False)
     ws_box.addLayout(actions_row(once_btn, learn_btn, view_btn))
+
+    feedback_banner = QtWidgets.QLabel("")
+    feedback_banner.setWordWrap(True)
+    feedback_banner.setVisible(False)
+    ws_box.addWidget(feedback_banner)
     filters_lay.addWidget(ws_card)
 
     guard_note = QtWidgets.QLabel("🔒 Habitous automatically filters secret tokens, API keys, and binaries locally on this device.")
@@ -251,11 +285,20 @@ def build_observe_tab(state: AppState, status: Any,
                 repo_resolved = str(Path(repo_text).resolve())
                 if repo_resolved not in roots:
                     roots.append(repo_resolved)
+                import subprocess
+                res = subprocess.run(
+                    ["git", "-C", repo_resolved, "rev-parse", "--show-toplevel"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if res.returncode == 0 and res.stdout.strip():
+                    git_toplevel = str(Path(res.stdout.strip()).resolve())
+                    if git_toplevel not in roots:
+                        roots.append(git_toplevel)
                 last_roots = list(state.prefs.last_roots)
                 if repo_resolved not in last_roots:
                     last_roots.append(repo_resolved)
-                    state.prefs.last_roots = tuple(last_roots)
-                    state.prefs.save()
+                state.prefs.last_roots = tuple(last_roots)
+                state.prefs.save()
             except Exception:
                 pass
         return roots
@@ -409,23 +452,18 @@ def build_observe_tab(state: AppState, status: Any,
                 "padding: 6px 16px; font-weight: 600; font-size: 13px; min-height: 22px;")
             obs_visor_face.set_state("resting")
 
-    def _clean_error(msg: str) -> str:
-        low = msg.lower()
-        if "not a git repository" in low or "fatal: cannot change to" in low or "no such file" in low:
-            return "Selected folder is not a valid Git repository. Please pick a Git project folder."
-        if "outside whitelisted observation roots" in low:
-            return "This folder is outside your authorized workspace roots. Click Trust or select a project folder."
-        if "dubious ownership" in low:
-            return "Git requires safe directory permission for this repository folder."
-        if "(" in msg and ")" in msg:
-            lead = msg.split("(")[0].strip()
-            if len(lead) > 10:
-                return lead
-        return msg
-
     def show_error(message: str) -> None:
-        error_text.setText(_clean_error(message))
-        trust_btn.setVisible("dubious ownership" in message.lower())
+        cleaned = clean_observe_error(message)
+        error_text.setText(cleaned)
+        low = message.lower()
+        if "outside" in low or "authorized" in low or "boundary" in low:
+            trust_btn.setText("Authorize folder & observe")
+            trust_btn.setVisible(True)
+        elif "dubious ownership" in low:
+            trust_btn.setText("Trust in Git & retry")
+            trust_btn.setVisible(True)
+        else:
+            trust_btn.setVisible(False)
         error_box.setVisible(True)
 
     def hide_error() -> None:
@@ -447,16 +485,88 @@ def build_observe_tab(state: AppState, status: Any,
         except Exception:
             pass
 
+    def validate_repo_path() -> tuple[bool, str]:
+        text = repo_edit.text().strip()
+        if not text:
+            repo_status_lbl.setText("ℹ️ Enter or browse to a local Git repository")
+            repo_status_lbl.setStyleSheet("color: #64748B; font-size: 12px; margin-top: 4px;")
+            return False, "empty"
+        from pathlib import Path
+        p = Path(text)
+        if not p.exists():
+            repo_status_lbl.setText(f"⚠️ Folder not found: {text}")
+            repo_status_lbl.setStyleSheet("color: #EF4444; font-size: 12px; font-weight: 500; margin-top: 4px;")
+            return False, "not_found"
+        import subprocess
+        try:
+            res = subprocess.run(
+                ["git", "-C", str(p), "rev-parse", "--show-toplevel"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if res.returncode != 0:
+                repo_status_lbl.setText("⚠️ Not a Git repository (no .git directory found)")
+                repo_status_lbl.setStyleSheet("color: #F59E0B; font-size: 12px; font-weight: 500; margin-top: 4px;")
+                return False, "not_git"
+            toplevel = res.stdout.strip()
+            c_res = subprocess.run(
+                ["git", "-C", str(p), "rev-list", "--count", "HEAD"],
+                capture_output=True, text=True, timeout=5,
+            )
+            count = c_res.stdout.strip() if c_res.returncode == 0 else "?"
+            repo_status_lbl.setText(f"✓ Valid Git repository: {Path(toplevel).name} ({count} commits found)")
+            repo_status_lbl.setStyleSheet("color: #10B981; font-size: 12px; font-weight: 500; margin-top: 4px;")
+            return True, toplevel
+        except Exception as exc:
+            repo_status_lbl.setText(f"⚠️ Git error: {exc}")
+            repo_status_lbl.setStyleSheet("color: #EF4444; font-size: 12px; margin-top: 4px;")
+            return False, str(exc)
+
     _trust_workers: list[Any] = []
 
     def on_trust_repo() -> None:
-        # Computational isolation (plan section 6): the confirmation
-        # dialog stays on the UI thread (it IS interaction), but the
-        # blocking `git config` subprocess runs on a worker thread.
+        repo = repo_edit.text().strip() or state.prefs.last_repo or "."
+        from pathlib import Path
+        try:
+            repo_resolved = str(Path(repo).resolve())
+        except Exception:
+            repo_resolved = repo
+
+        pending_err = getattr(watcher, "last_error", "") or error_text.text()
+        low = pending_err.lower()
+
+        # Workspace root authorization error: authorize directly without scary git config
+        if "outside" in low or "authorized" in low or "boundary" in low:
+            roots = list(state.prefs.last_roots)
+            if repo_resolved not in roots:
+                roots.append(repo_resolved)
+            import subprocess
+            try:
+                res = subprocess.run(
+                    ["git", "-C", repo_resolved, "rev-parse", "--show-toplevel"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if res.returncode == 0 and res.stdout.strip():
+                    top = str(Path(res.stdout.strip()).resolve())
+                    if top not in roots:
+                        roots.append(top)
+            except Exception:
+                pass
+            state.prefs.last_roots = tuple(roots)
+            inact = [r for r in state.prefs.inactive_roots if r != repo_resolved]
+            state.prefs.inactive_roots = tuple(inact)
+            state.prefs.last_repo = repo_resolved
+            try:
+                state.prefs.save()
+            except Exception:
+                pass
+            hide_error()
+            status.showMessage(f"Authorized {Path(repo_resolved).name} — observing now…", 4000)
+            on_observe_now()
+            return
+
         if _trust_workers:
             status.showMessage("Already trusting a folder…", 4000)
             return
-        repo = repo_edit.text().strip() or "."
         confirm = QtWidgets.QMessageBox(root)
         confirm.setWindowTitle("Trust this folder?")
         confirm.setText(
@@ -516,6 +626,8 @@ def build_observe_tab(state: AppState, status: Any,
         repo = repo_edit.text().strip() or state.prefs.last_repo
         if not repo:
             status.showMessage("Choose a workspace repo first.", 5000)
+            repo_status_lbl.setText("⚠️ Please enter or browse to a workspace repo first.")
+            repo_status_lbl.setStyleSheet("color: #EF4444; font-size: 12px; font-weight: 500; margin-top: 4px;")
             return
         from pathlib import Path
         try:
@@ -543,8 +655,6 @@ def build_observe_tab(state: AppState, status: Any,
             watch_btn.setEnabled(True)
             refresh_banner()
 
-        # Prefer the non-blocking first pass (the UI never freezes on a
-        # slow repo); stub watchers in tests only implement start().
         start_async = getattr(watcher, "start_async", None)
         if start_async is None:
             ok, message = watcher.start(repo_resolved, roots,
@@ -555,7 +665,7 @@ def build_observe_tab(state: AppState, status: Any,
         status.showMessage("Starting observation…", 4000)
         start_async(repo_resolved, roots, commits_spin.value(), _started)
 
-    def on_observe_now() -> None:
+    def on_observe_now(on_success: Optional[Callable[[], None]] = None) -> None:
         repo = repo_edit.text().strip() or state.prefs.last_repo or "."
         from pathlib import Path
         try:
@@ -566,37 +676,124 @@ def build_observe_tab(state: AppState, status: Any,
         roots = current_roots()
         if repo_resolved not in roots:
             roots.append(repo_resolved)
-        status.showMessage(f"Analyzing {Path(repo_resolved).name}...", 3000)
-        try:
-            episodes = state.observe(repo_resolved, roots,
-                                     commits_spin.value())
-        except Exception as exc:
+
+        feedback_banner.setVisible(False)
+        once_btn.setEnabled(False)
+        once_btn.setText("⏳ Observing…")
+        obs_visor_face.set_state("observing")
+        QtWidgets.QApplication.processEvents()
+        status.showMessage(f"Analyzing {Path(repo_resolved).name}…", 4000)
+
+        def _cleanup() -> None:
+            once_btn.setEnabled(True)
+            once_btn.setText("Observe now")
+
+        def _observe_done(episodes: Any, repo_path: str, cb: Optional[Callable[[], None]] = None) -> None:
+            _cleanup()
+            obs_visor_face.set_state("resting")
+            hide_error()
+            count = len(episodes) if episodes else 0
+            feedback_banner.setText(
+                f"✓ Successfully observed {count} commit episode(s) from {Path(repo_path).name}! "
+                f"Ready to Learn Principles."
+            )
+            feedback_banner.setStyleSheet(
+                "color: #065F46; font-size: 13px; font-weight: 500; background: #ECFDF5; "
+                "border: 1px solid #A7F3D0; border-radius: 8px; padding: 10px 14px; margin-top: 6px;"
+            )
+            feedback_banner.setVisible(True)
+            view_btn.setEnabled(True)
+            status.showMessage(f"Observed {count} episode(s) from {Path(repo_path).name}.", 5000)
+            render_feed()
+            render_scopes()
+            if cb is not None:
+                cb()
+
+        def _observe_fail(message: str) -> None:
+            _cleanup()
+            obs_visor_face.set_state("alert")
             try:
-                watcher.last_error = str(exc)
+                watcher.last_error = message
             except AttributeError:
                 pass
-            show_error(f"Observe failed: {exc}")
-            status.showMessage(f"Observe failed: {exc}", 8000)
-            return
-        hide_error()
-        view_btn.setEnabled(True)
-        status.showMessage(f"Observed {len(episodes)} episode(s) from {Path(repo_resolved).name}.", 5000)
-        render_feed()
-        render_scopes()
+            feedback_banner.setText(f"Observation failed: {clean_observe_error(message)}")
+            feedback_banner.setStyleSheet(
+                "color: #991B1B; font-size: 13px; font-weight: 500; background: #FEF2F2; "
+                "border: 1px solid #FECACA; border-radius: 8px; padding: 10px 14px; margin-top: 6px;"
+            )
+            feedback_banner.setVisible(True)
+            show_error(f"Observe failed: {message}")
+            status.showMessage(f"Observe failed: {message}", 8000)
 
-    def on_learn() -> None:
+        try:
+            episodes = state.observe(repo_resolved, roots, commits_spin.value())
+            _observe_done(episodes, repo_resolved, on_success)
+        except Exception as exc:
+            _observe_fail(str(exc))
+
+    def _do_learn() -> None:
         if not state.episodes:
-            status.showMessage("Observe a repository first.", 5000)
+            status.showMessage("No commit history found to learn from. Try increasing commit depth.", 6000)
+            feedback_banner.setText("⚠️ No commit history found to analyze. Please choose a repository with commits.")
+            feedback_banner.setStyleSheet(
+                "color: #9A3412; font-size: 13px; font-weight: 500; background: #FFF7ED; "
+                "border: 1px solid #FED7AA; border-radius: 8px; padding: 10px 14px; margin-top: 6px;"
+            )
+            feedback_banner.setVisible(True)
             return
+        learn_btn.setEnabled(False)
+        learn_btn.setText("🧠 Mining principles…")
+        obs_visor_face.set_state("thinking")
+        status.showMessage("Inductive Detective mining behavioral principles…", 4000)
         try:
             principles = state.learn(min_cluster_size=1)
         except Exception as exc:
+            learn_btn.setEnabled(True)
+            learn_btn.setText("🧠 Learn Principles")
+            obs_visor_face.set_state("alert")
             status.showMessage(f"Learn failed: {exc}", 8000)
+            feedback_banner.setText(f"Learn failed: {exc}")
+            feedback_banner.setStyleSheet(
+                "color: #991B1B; font-size: 13px; font-weight: 500; background: #FEF2F2; "
+                "border: 1px solid #FECACA; border-radius: 8px; padding: 10px 14px; margin-top: 6px;"
+            )
+            feedback_banner.setVisible(True)
             return
-        status.showMessage(f"Learned {len(principles)} principle(s).", 5000)
+
+        learn_btn.setEnabled(True)
+        learn_btn.setText("🧠 Learn Principles")
+        obs_visor_face.set_state("resting")
+        count = len(principles)
+        feedback_banner.setText(
+            f"🎉 Successfully learned {count} behavioral principle(s)! Click 'View in Memory →' to inspect."
+        )
+        feedback_banner.setStyleSheet(
+            "color: #065F46; font-size: 13px; font-weight: 600; background: #ECFDF5; "
+            "border: 1px solid #A7F3D0; border-radius: 8px; padding: 10px 14px; margin-top: 6px;"
+        )
+        feedback_banner.setVisible(True)
         view_btn.setEnabled(True)
+        view_btn.setStyleSheet(
+            "background: #4F46E5; color: white; border: 0; border-radius: 8px; "
+            "padding: 6px 16px; font-weight: 600; font-size: 13px; min-height: 22px;"
+        )
+        status.showMessage(f"Learned {count} principle(s) stored in Behavioral Memory.", 6000)
         chime()
         render_feed()
+
+    def on_learn() -> None:
+        if not state.episodes:
+            feedback_banner.setText(
+                "ℹ️ No captured episodes yet. Ingesting git commits first, then learning principles…"
+            )
+            feedback_banner.setStyleSheet(
+                "color: #3730A3; font-size: 13px; font-weight: 500; background: #EEF2FF; "
+                "border: 1px solid #C7D2FE; border-radius: 8px; padding: 10px 14px; margin-top: 6px;"
+            )
+            feedback_banner.setVisible(True)
+            on_observe_now(on_success=_do_learn)
+            return
+        _do_learn()
 
     def on_browse_repo() -> None:
         chosen = QtWidgets.QFileDialog.getExistingDirectory(
@@ -606,9 +803,10 @@ def build_observe_tab(state: AppState, status: Any,
             save_prefs()
             current_roots()
             render_scopes()
+            validate_repo_path()
+            hide_error()
 
-    sessions_btn.clicked.connect(lambda: stack.setCurrentIndex(0))
-    apps_btn.clicked.connect(lambda: stack.setCurrentIndex(1))
+    repo_edit.textChanged.connect(lambda _: validate_repo_path())
     timeframe.currentTextChanged.connect(lambda _t: render_feed())
     repo_browse.clicked.connect(on_browse_repo)
     watch_btn.clicked.connect(on_watch)
@@ -624,6 +822,16 @@ def build_observe_tab(state: AppState, status: Any,
         render_feed()
         render_scopes()
         sync_error()
+        validate_repo_path()
+        try:
+            if state.store.list_all():
+                view_btn.setEnabled(True)
+                view_btn.setStyleSheet(
+                    "background: #4F46E5; color: white; border: 0; border-radius: 8px; "
+                    "padding: 6px 16px; font-weight: 600; font-size: 13px; min-height: 22px;"
+                )
+        except Exception:
+            pass
 
     root.refresh_content = refresh_content
     refresh_content()

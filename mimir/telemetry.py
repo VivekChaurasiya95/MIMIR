@@ -222,7 +222,10 @@ def resolve_repo(
         raise NotARepositoryError(f"{repo_path}: not a git repository")
     canonical = _canonical_path(toplevel)
     roots = [_canonical_path(r) for r in allowed_roots]
-    if not any(canonical == root or root in canonical.parents for root in roots):
+    if not any(
+        canonical == root or root in canonical.parents or canonical in root.parents
+        for root in roots
+    ):
         raise TelemetryBoundaryError(
             f"{canonical}: outside whitelisted observation roots "
             f"{[str(r) for r in roots]}"

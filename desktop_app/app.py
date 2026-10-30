@@ -92,6 +92,12 @@ class MainWindow:
         if self._closing:
             return
         self._closing = True
+        try:
+            from .tray import hide_tray
+            if self._window is not None:
+                hide_tray(self._window)
+        except Exception:
+            pass
         # Release the single Qt-integrated event loop (if this app owns
         # it) so a later launch in the same process can reacquire it.
         try:
@@ -184,6 +190,14 @@ class MainWindow:
         status = window.statusBar()
         status.showMessage(f"Habitous Memory: {self.state.store_path}", 6000)
 
+        # System-tray companion (Settings → General owns the preference).
+        try:
+            from .tray import sync_tray
+            sync_tray(window, bool(getattr(self.state.prefs,
+                                           "show_in_tray", True)))
+        except Exception:
+            pass
+
         # Wire floating co-bot companion
         try:
             from mimir.ui.visor import create_visor_widget
@@ -211,6 +225,35 @@ class MainWindow:
         orig_close = window.closeEvent
 
         def _on_close(event: Any) -> None:
+            try:
+                forced = bool(window.property("_mimir_force_quit"))
+            except Exception:
+                forced = False
+            tray = None
+            if not forced:
+                try:
+                    from .tray import sync_tray
+                    tray = sync_tray(
+                        window, bool(getattr(self.state.prefs,
+                                             "show_in_tray", True)))
+                except Exception:
+                    tray = None
+            if tray is not None and not forced:
+                try:
+                    event.ignore()
+                except Exception:
+                    pass
+                try:
+                    window.hide()
+                except Exception:
+                    pass
+                try:
+                    tray.showMessage(
+                        "Habitous",
+                        "Still here — click the tray icon to reopen.")
+                except Exception:
+                    pass
+                return
             self.shutdown()
             if callable(orig_close):
                 orig_close(event)
