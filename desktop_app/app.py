@@ -313,7 +313,19 @@ class MainWindow:
         side.addWidget(settings_btn)
 
         from .watch import WatchController
-        watcher = WatchController(self.state, status)
+
+        def _on_activity(note: str) -> None:
+            # Wandering narration: the floating pill's tooltip carries
+            # Habi's live read of the user's task.
+            try:
+                pill = self.visor_pill
+                if pill is not None and hasattr(pill, "set_activity_note"):
+                    pill.set_activity_note(note)
+            except Exception:
+                pass
+
+        watcher = WatchController(self.state, status,
+                                  on_activity=_on_activity)
 
         stack = QtWidgets.QStackedWidget()
         builders = {

@@ -108,6 +108,32 @@ class DesktopPrefs:
         roots = list(self.last_roots) or list(fallback or [])
         return [r for r in roots if r not in set(self.inactive_roots)]
 
+    def add_watch_root(self, path: str) -> "DesktopPrefs":
+        """Return prefs watching ``path`` too (deduped, order-kept)."""
+        cleaned = (path or "").strip()
+        if not cleaned:
+            raise ValueError("path: expected a non-empty folder path")
+        roots = list(self.last_roots)
+        if cleaned not in roots:
+            roots.append(cleaned)
+        return DesktopPrefs(**{**asdict(self), "last_roots": tuple(roots)})
+
+    def remove_watch_root(self, path: str) -> "DesktopPrefs":
+        """Return prefs no longer watching ``path``.
+
+        Drops the folder from both ``last_roots`` and
+        ``inactive_roots``; unknown paths are a no-op. Clearing the
+        last root is allowed — :meth:`active_roots` falls back to the
+        caller's defaults, and the Observe tab re-seeds from the
+        workspace picker.
+        """
+        cleaned = (path or "").strip()
+        roots = [r for r in self.last_roots if r != cleaned]
+        inactive = [r for r in self.inactive_roots if r != cleaned]
+        return DesktopPrefs(
+            **{**asdict(self), "last_roots": tuple(roots),
+               "inactive_roots": tuple(inactive)})
+
     def record_task(self, title: str, project: str, verdict: str,
                     at: str | None = None) -> "DesktopPrefs":
         entry = {"title": title.strip() or "(untitled task)",

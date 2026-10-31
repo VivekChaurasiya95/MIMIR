@@ -30,7 +30,9 @@ class WatchController:
     def __init__(self, state: AppState, status: Any = None,
                  interval_ms: int = WATCH_INTERVAL_MS,
                  on_tick: Optional[Callable[[int], None]] = None,
-                 use_worker: bool = True) -> None:
+                 use_worker: bool = True,
+                 on_activity: Optional[Callable[[str], None]] = None,
+                 ) -> None:
         _, QtCore, _, _ = load_qt()
         # Parent the timer into the window tree when possible (the
         # status bar is a window child in production): background passes
@@ -44,6 +46,7 @@ class WatchController:
         self.state = state
         self.status = status
         self.on_tick = on_tick
+        self.on_activity = on_activity
         self.repo = ""
         self.roots: list[str] = []
         self.max_commits = 10
@@ -64,6 +67,11 @@ class WatchController:
         # on stop so repeated watch cycles never stack handlers.
         self._sensory: Any = None
         self._visor_tokens: list[Any] = []
+        # Wandering analysis: one Llama-3.2 activity read every few
+        # polls, so roaming narrates the user's task instead of
+        # drifting passively. Single-flight like the poll worker.
+        self._activity_worker: Any = None
+        self._activity_tick = 0
 
     @property
     def watching(self) -> bool:
@@ -92,6 +100,7 @@ class WatchController:
         self._start_live_senses()
         self._announce(f"Observing {repo} — {len(fresh)} new episode(s).")
         self._chime()
+        self._maybe_sample_activity()
         return (True, f"Observing — {len(fresh)} new episode(s).")
 
     def start_async(
@@ -177,6 +186,7 @@ class WatchController:
         self._timer.start()
         self._start_live_senses()
         self._report_fresh(fresh)
+        self._maybe_sample_activity()
         self._finish_start(True, message, on_done)
 
     def _on_start_failed(self, worker: Any, message: str,
@@ -204,9 +214,20 @@ class WatchController:
             except Exception:
                 pass
             self._retire(worker)
+        activity, self._activity_worker = self._activity_worker, None
+        if activity is not None:
+            try:
+                activity.cancel()
+            except Exception:
+                pass
+            self._retire(activity)
         self._idle.set()
         self._stop_live_senses()
         self.state.set_watching(False)
+        try:
+            self.state.last_activity_note = ""
+        except Exception:
+            pass
         self._announce("Observation stopped.")
         self._chime()
 
@@ -285,7 +306,8 @@ class WatchController:
         except Exception:
             pump = None
         while _time.monotonic() < deadline:
-            if self._idle.is_set() and self._worker is None:
+            if (self._idle.is_set() and self._worker is None
+                    and self._activity_worker is None):
                 return True
             if pump is not None:
                 try:
@@ -293,7 +315,8 @@ class WatchController:
                 except Exception:
                     pass
             _time.sleep(0.01)
-        return self._idle.is_set() and self._worker is None
+        return (self._idle.is_set() and self._worker is None
+                and self._activity_worker is None)
 
     def _poll(self) -> None:
         if not self._use_worker:
@@ -329,6 +352,91 @@ class WatchController:
                 pass
         if fresh:
             self._announce(f"{len(fresh)} new episode(s) observed.")
+
+    def _maybe_sample_activity(self) -> None:
+        """Throttled Llama-3.2 read of the user's current task.
+
+        Runs every other pass (~30s) on a worker thread, single-flight.
+        A finished insight lands on ``state.last_activity_note`` (shown
+        by the Home/Observe banners and the wandering pill tooltip) and
+        is emitted as a ``PATTERN_DETECTED`` event; silence (daemon
+        down, no context) leaves the previous note untouched.
+        """
+        try:
+            self._activity_tick += 1
+            if self._activity_tick % 2 == 0:
+                return
+            if self._activity_worker is not None or not self.watching:
+                return
+            from .activity import note_activity
+            from .observe_worker import create_callable_worker
+            worker = create_callable_worker(
+                note_activity, (self.state,), {"timeout_s": 3.0},
+                parent=self._timer,
+            )
+        except Exception:
+            return
+        try:
+            worker.callable_finished.connect(
+                lambda note: self._on_activity_finished(worker, note))
+            worker.callable_error.connect(
+                lambda _message: self._release_activity_worker(worker))
+            worker.callable_cancelled.connect(
+                lambda: self._release_activity_worker(worker))
+        except Exception:
+            try:
+                worker.deleteLater()
+            except Exception:
+                pass
+            return
+        self._activity_worker = worker
+        try:
+            worker.start()
+        except Exception:
+            self._activity_worker = None
+            try:
+                worker.deleteLater()
+            except Exception:
+                pass
+
+    def _release_activity_worker(self, worker: Any) -> bool:
+        """Forget the activity worker if it is still current."""
+        try:
+            if self._activity_worker is not worker:
+                return False
+            self._activity_worker = None
+            try:
+                worker.deleteLater()
+            except Exception:
+                pass
+            return True
+        except Exception:
+            return False
+
+    def _on_activity_finished(self, worker: Any, note: Any) -> None:
+        try:
+            if not self._release_activity_worker(worker):
+                return
+            text = str(note or "").strip()
+            if not text:
+                return
+            try:
+                self.state.last_activity_note = text
+            except Exception:
+                pass
+            try:
+                from mimir.events import EventType
+                self.state._emit(EventType.PATTERN_DETECTED,
+                                 "cobot.activity", {"insight": text})
+            except Exception:
+                pass
+            if self.on_activity is not None:
+                try:
+                    self.on_activity(text)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     def _poll_async(self) -> None:
         try:
@@ -379,6 +487,7 @@ class WatchController:
             return
         try:
             self._report_fresh(fresh)
+            self._maybe_sample_activity()
         finally:
             self._drain_pending()
 

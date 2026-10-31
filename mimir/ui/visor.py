@@ -265,9 +265,23 @@ def create_visor_widget(
 
         def _refresh_tooltip(self, state: VisorState) -> None:
             try:
-                self.setToolTip(f"Habi: {VISOR_LABELS[state]}")
+                note = getattr(self, "_activity_note", "") or ""
+                suffix = f" — {note}" if note else ""
+                self.setToolTip(f"Habi: {VISOR_LABELS[state]}{suffix}")
             except (RuntimeError, AttributeError):
                 pass
+
+        def set_activity_note(self, note: str) -> None:
+            """Show a one-line activity read in the tooltip (\"Notices\").
+
+            Called while Habi wanders so roaming narrates the task it
+            sees; an empty note clears the suffix.
+            """
+            try:
+                self._activity_note = str(note or "").strip()[:120]
+            except Exception:
+                self._activity_note = ""
+            self._refresh_tooltip(self._controller.state)
 
         def _toggle_blink(self) -> None:
             if not self._is_hovered and self.isVisible():

@@ -404,9 +404,17 @@ def build_observe_tab(state: AppState, status: Any,
             switch = toggle(root_path not in inactive)
             switch.toggled.connect(
                 lambda on, p=root_path: on_scope_toggle(p, on))
+            remove_btn = QtWidgets.QPushButton("✕ Remove")
+            remove_btn.setObjectName("remove_root_btn")
+            remove_btn.setProperty("root_path", root_path)
+            remove_btn.setToolTip(
+                "Stop watching this folder and remove it from the list")
+            remove_btn.clicked.connect(
+                lambda _=False, p=root_path: on_remove_folder(p))
             lay.addWidget(glyph)
             lay.addLayout(text, 1)
             lay.addWidget(switch)
+            lay.addWidget(remove_btn)
             scopes_box.addWidget(row)
 
     def on_scope_toggle(path: str, on: bool) -> None:
@@ -421,22 +429,70 @@ def build_observe_tab(state: AppState, status: Any,
             f"{'Watching' if on else 'Ignoring'} {path}.", 4000)
 
     def on_add_folder() -> None:
-        chosen = QtWidgets.QFileDialog.getExistingDirectory(
-            root, "Add watched folder", ".")
+        try:
+            chosen = QtWidgets.QFileDialog.getExistingDirectory(
+                root, "Add watched folder", ".")
+        except Exception:
+            return
         if chosen:
-            roots = list(state.prefs.last_roots)
-            if chosen not in roots:
-                roots.append(chosen)
-            state.prefs.last_roots = tuple(roots)
+            try:
+                state.prefs = state.prefs.add_watch_root(chosen)
+            except ValueError:
+                return
             save_prefs()
             render_scopes()
+            status.showMessage(f"Watching {chosen}.", 4000)
+
+    def on_remove_folder(path: str) -> None:
+        # Slot armor: an escaping exception natively aborts the app.
+        try:
+            _on_remove_folder_inner(path)
+        except Exception as exc:
+            try:
+                status.showMessage(f"Could not remove folder: {exc}",
+                                   8000)
+            except Exception:
+                pass
+
+    def _on_remove_folder_inner(path: str) -> None:
+        from pathlib import Path
+        watching_path = False
+        try:
+            watching_path = bool(getattr(watcher, "watching", False)) and (
+                path in list(getattr(watcher, "roots", []) or []))
+        except Exception:
+            watching_path = False
+        name = Path(path).name or path
+        answer = QtWidgets.QMessageBox.question(
+            root, "Remove watched folder",
+            f"Stop watching '{name}' and remove it from the list?\n\n"
+            + ("Observation is running on this folder and will pause."
+               if watching_path else
+               "Its episodes stay in the session feed; only watching stops."),
+            QtWidgets.QMessageBox.StandardButton.Yes
+            | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.No)
+        if answer != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        if watching_path:
+            try:
+                watcher.stop()
+            except Exception:
+                pass
+        state.prefs = state.prefs.remove_watch_root(path)
+        save_prefs()
+        render_scopes()
+        refresh_banner()
+        status.showMessage(f"Removed {name} from watched folders.", 4000)
 
     def refresh_banner() -> None:
         if watcher.watching:
             repo_name = Path(state.prefs.last_repo).name if state.prefs.last_repo else "workspace"
+            note = (getattr(state, "last_activity_note", "") or "").strip()
             state_line.setText("Observing")
             context_line.setText(
-                f"Recording telemetry from {repo_name}.")
+                f"Recording telemetry from {repo_name}."
+                + (f" Notices: {note[:80]}" if note else ""))
             watch_btn.setText("⏹ Stop Observing")
             watch_btn.setStyleSheet(
                 "background: #DC2626; color: white; border: 0; border-radius: 8px; "

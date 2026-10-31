@@ -25,7 +25,7 @@ FEED_PREVIEW = 5
 
 
 def build_replicate_tab(state: AppState, status: Any) -> Any:
-    _, _, _, QtWidgets = load_qt()
+    _, QtCore, QtGui, QtWidgets = load_qt()
     root, layout = page()
     layout.addWidget(page_head(
         "Replicate", "Apply your style to new tasks.",
@@ -88,6 +88,23 @@ def build_replicate_tab(state: AppState, status: Any) -> Any:
     engine_note.setObjectName("muted")
     engine_note.setWordWrap(True)
     prompt_lay.addWidget(engine_note)
+    ollama_wrap = QtWidgets.QWidget()
+    ollama_row = QtWidgets.QHBoxLayout(ollama_wrap)
+    ollama_row.setContentsMargins(0, 4, 0, 0)
+    ollama_row.setSpacing(8)
+    start_ollama_btn = QtWidgets.QPushButton("Start Ollama")
+    start_ollama_btn.setObjectName("soft")
+    start_ollama_btn.setToolTip(
+        "Launch the on-device Ollama daemon for live Llama-3.2 "
+        "synthesis (loopback only, no cloud).")
+    get_ollama_btn = QtWidgets.QPushButton("Get Ollama…")
+    get_ollama_btn.setObjectName("chip")
+    get_ollama_btn.setToolTip("Open the Ollama download page.")
+    ollama_row.addWidget(start_ollama_btn)
+    ollama_row.addWidget(get_ollama_btn)
+    ollama_row.addStretch(1)
+    ollama_wrap.setVisible(False)
+    prompt_lay.addWidget(ollama_wrap)
     layout.addWidget(prompt_box)
 
     verdict = QtWidgets.QLabel("")
@@ -145,6 +162,10 @@ def build_replicate_tab(state: AppState, status: Any) -> Any:
             live = get_llm_fn(state.prefs) is not None
         except Exception:
             live = False
+        try:
+            ollama_wrap.setVisible(not live)
+        except Exception:
+            pass
         if live:
             provider = (state.prefs.model_provider or "").strip() or "live"
             model = (state.prefs.model_name or "").strip()
@@ -154,8 +175,85 @@ def build_replicate_tab(state: AppState, status: Any) -> Any:
                 + " — falls back to the offline scaffold if unreachable.")
         else:
             engine_note.setText(
-                "Engine: offline heuristic scaffold — set a provider in "
-                "Settings → Model for live synthesis.")
+                "Engine: offline draft — start the on-device Ollama "
+                "daemon below for live Llama-3.2 synthesis grounded "
+                "in your principles.")
+
+    def on_start_ollama() -> None:
+        try:
+            from ..observe_worker import create_callable_worker
+            from ..ollama import ensure_ollama_daemon, ollama_endpoint
+        except ImportError:
+            status.showMessage("Ollama helper unavailable.", 6000)
+            return
+        start_ollama_btn.setEnabled(False)
+        status.showMessage("Starting Ollama daemon…", 6000)
+        try:
+            worker = create_callable_worker(
+                ensure_ollama_daemon,
+                (ollama_endpoint(state.prefs),),
+                parent=root)
+        except Exception as exc:
+            start_ollama_btn.setEnabled(True)
+            status.showMessage(f"Could not start Ollama: {exc}", 8000)
+            return
+        _workers.append(worker)
+
+        def _release() -> None:
+            start_ollama_btn.setEnabled(True)
+            try:
+                _workers.remove(worker)
+            except ValueError:
+                pass
+            try:
+                worker.deleteLater()
+            except Exception:
+                pass
+
+        def _done(report: object) -> None:
+            _release()
+            ok = bool(report[0]) if isinstance(report, tuple) else False
+            message = str(report[1]) if isinstance(report, tuple) else ""
+            if ok:
+                # Adopt the live engine like the startup probe does.
+                try:
+                    from ..ollama import (ollama_endpoint as _endpoint,
+                                          probe_ollama)
+                    probe = probe_ollama(_endpoint(state.prefs))
+                    if probe.get("available"):
+                        state.prefs.model_provider = "ollama"
+                        if not (state.prefs.model_name or "").strip():
+                            state.prefs.model_name = str(
+                                probe.get("selected") or "llama3.2:1b")
+                        state.prefs.save()
+                except Exception:
+                    pass
+            status.showMessage(message or "Ollama status refreshed.",
+                               8000)
+            try:
+                sync_engine()
+            except Exception:
+                pass
+
+        def _failed(message: str) -> None:
+            _release()
+            status.showMessage(f"Ollama start failed: {message}", 8000)
+
+        try:
+            worker.callable_finished.connect(_done)
+            worker.callable_error.connect(_failed)
+            worker.start()
+        except Exception as exc:
+            _release()
+            status.showMessage(f"Ollama start failed: {exc}", 8000)
+
+    def on_get_ollama() -> None:
+        try:
+            from ..ollama import OLLAMA_DOWNLOAD_URL
+            QtGui.QDesktopServices.openUrl(QtCore.QUrl(OLLAMA_DOWNLOAD_URL))
+        except Exception as exc:
+            status.showMessage(f"Could not open download page: {exc}",
+                               8000)
 
     def sync_project_items() -> None:
         seen: list[str] = []
@@ -713,46 +811,125 @@ def build_replicate_tab(state: AppState, status: Any) -> Any:
         if resumed:
             status.showMessage("Safety stop cleared — Habi is ready.", 5000)
 
+    def _mic_reset() -> None:
+        """Restore the dictate button to idle (idempotent, never raises)."""
+        try:
+            mic_btn._is_listening = False  # type: ignore[attr-defined]
+            mic_btn._active_worker = None  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        try:
+            mic_btn.setText("🎙")
+            mic_btn.setEnabled(True)
+            mic_btn.setToolTip(
+                "Dictate instead of typing (needs a microphone)")
+        except Exception:
+            pass
+
+    def _mic_release(worker: Any) -> None:
+        try:
+            _workers.remove(worker)
+        except ValueError:
+            pass
+        try:
+            worker.deleteLater()
+        except Exception:
+            pass
+
     def on_mic() -> None:
+        # Slot armor: an escaping exception natively aborts the app.
+        try:
+            _on_mic_inner()
+        except Exception as exc:
+            _mic_reset()
+            try:
+                status.showMessage(f"Microphone: {exc}", 8000)
+            except Exception:
+                pass
+
+    def _dictate(heard: str) -> None:
+        task_edit.setPlainText(
+            (task_edit.toPlainText() + " " + heard).strip())
+        task_edit.setFocus()
+
+    def _on_mic_inner() -> None:
+        if getattr(mic_btn, "_is_listening", False):
+            worker = getattr(mic_btn, "_active_worker", None)
+            if worker is not None:
+                try:
+                    worker.cancel()
+                except Exception:
+                    pass
+            _mic_reset()
+            status.showMessage("Voice dictation cancelled.", 3000)
+            return
         try:
             from ..voice_worker import create_listen_worker
         except ImportError:
             status.showMessage("Listening… speak now.", 4000)
-            ok, heard = state.try_listen(timeout_sec=8.0)
+            try:
+                ok, heard = state.try_listen(timeout_sec=10.0)
+            except Exception as exc:
+                ok, heard = False, str(exc)
             if ok:
-                task_edit.setPlainText(
-                    (task_edit.toPlainText() + " " + heard).strip())
-                task_edit.setFocus()
+                _dictate(heard)
             else:
                 status.showMessage(f"Microphone: {heard}", 8000)
             return
-        status.showMessage("Listening… speak now.", 9000)
-        mic_btn.setEnabled(False)
-        worker = create_listen_worker(state.voice_coordinator(),
-                                      timeout_sec=8.0, parent=root)
+        mic_btn._is_listening = True  # type: ignore[attr-defined]
+        mic_btn.setText("⏹")
+        mic_btn.setToolTip("Listening... Click to stop")
+        status.showMessage("Listening… speak now (10s).", 9000)
+        try:
+            worker = create_listen_worker(state.voice_coordinator(),
+                                          timeout_sec=10.0, parent=root)
+        except Exception as exc:
+            _mic_reset()
+            status.showMessage(f"Microphone: {exc}", 8000)
+            return
+        mic_btn._active_worker = worker  # type: ignore[attr-defined]
         _workers.append(worker)
 
         def _done(ok: bool, heard: str) -> None:
-            mic_btn.setEnabled(True)
-            if ok:
-                task_edit.setPlainText(
-                    (task_edit.toPlainText() + " " + heard).strip())
-                task_edit.setFocus()
-            else:
-                status.showMessage(f"Microphone: {heard}", 8000)
             try:
-                _workers.remove(worker)
-            except ValueError:
-                pass
+                if getattr(mic_btn, "_active_worker", None) is not worker:
+                    _mic_release(worker)
+                    return
+                _mic_reset()
+                _mic_release(worker)
+                if ok:
+                    _dictate(heard)
+                else:
+                    try:
+                        from mimir.voice import explain_capture_error
+                        heard = explain_capture_error(RuntimeError(heard))
+                    except Exception:
+                        pass
+                    status.showMessage(f"Microphone: {heard}", 8000)
+            except Exception as exc:
+                _mic_reset()
+                status.showMessage(f"Microphone: {exc}", 8000)
+
+        def _cancelled() -> None:
             try:
-                worker.deleteLater()
+                _mic_release(worker)
+                if getattr(mic_btn, "_active_worker", None) is worker:
+                    _mic_reset()
             except Exception:
                 pass
 
         worker.listen_finished.connect(_done)
-        worker.start()
+        worker.listen_cancelled.connect(_cancelled)
+        try:
+            worker.start()
+        except Exception as exc:
+            _mic_reset()
+            _mic_release(worker)
+            status.showMessage(f"Microphone: {exc}", 8000)
 
     conf_spin.valueChanged.connect(on_conf_changed)
+    start_ollama_btn.clicked.connect(on_start_ollama)
+    get_ollama_btn.clicked.connect(on_get_ollama)
     generate_btn.clicked.connect(on_generate)
     copy_btn.clicked.connect(on_copy)
     drive_btn.clicked.connect(on_drive)

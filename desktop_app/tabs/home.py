@@ -368,8 +368,10 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
             "learn your style, and apply it when you need me.")
         if watcher.watching:
             state_line.setText("Observing")
+            note = (getattr(state, "last_activity_note", "") or "").strip()
             context_line.setText(
-                f"Watching {Path(state.prefs.last_repo).name if state.prefs.last_repo else 'workspace'}")
+                f"Watching {Path(state.prefs.last_repo).name if state.prefs.last_repo else 'workspace'}"
+                + (f" · Notices: {note[:80]}" if note else ""))
             watch_btn.setText("⏹ Stop Observing")
             watch_btn.setStyleSheet(
                 "background: #DC2626; color: white; border: 0; border-radius: 8px; "
@@ -531,11 +533,20 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
         _speak_answer(answer)
 
     def _memory_fallback(text: str) -> str:
-        hits = state.search(text, top_k=2, min_confidence=0.0)
+        try:
+            return state._offline_answer(text)
+        except Exception:
+            pass
+        try:
+            hits = state.search(text, top_k=2, min_confidence=0.0)
+        except Exception:
+            hits = []
         if hits:
             habits_desc = "; ".join(h.name for h in hits)
             return f"Relevant habits in your memory: {habits_desc}. Head to the Replicate tab to apply them to this task."
-        return f"Habi is active and learning from your workspace. Ask me to explain code, plan a feature, or run Replicate to draft solutions."
+        return ("Habi is active and learning from your workspace. Ask me "
+                "to explain code, plan a feature, or run Replicate to "
+                "draft solutions.")
 
     def _answer(intent: str, text: str, llama_reply: Any = None) -> None:
         # respond() always runs: it owns the stop E-stop latch and the
@@ -548,23 +559,41 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
         _render_answer(answer)
 
     def on_ask() -> None:
-        state.stop_speaking()
+        # Slot armor: an escaping exception natively aborts the app.
+        try:
+            _on_ask_inner()
+        except Exception as exc:
+            try:
+                ask_btn.setEnabled(True)
+            except Exception:
+                pass
+            try:
+                status.showMessage(f"Habi could not answer: {exc}", 8000)
+            except Exception:
+                pass
+
+    def _on_ask_inner() -> None:
+        try:
+            state.stop_speaking()
+        except Exception:
+            pass
         text = explore.text().strip()
         if not text:
             status.showMessage("Type something to explore first.", 4000)
             explore.setFocus()
             return
-        parsed = state.parse_utterance(text)
-        if parsed.get("intent") and parsed["intent"] not in ("unknown", None):
+        try:
+            parsed = state.parse_utterance(text)
+        except Exception:
+            parsed = {"intent": "unknown", "text": text}
+        if parsed.get("intent") and parsed["intent"] not in ("unknown", None, ""):
             _answer(parsed["intent"], parsed["text"])
             return
-        # Unknown to the keyword parser: consult the local Llama
-        # intent parser off the UI thread, then answer or fall back
-        # to the memory search.
-        provider = (getattr(state.prefs, "model_provider", "") or "").strip().lower()
-        if provider in ("offline", "", "none"):
-            _render_answer(_memory_fallback(text))
-            return
+        # Unknown to the keyword parser: consult the on-device Llama
+        # foundation off the UI thread — structured intent first, then
+        # a full conversational answer — failing closed to the memory
+        # summary when the daemon is down. Always attempted (loopback
+        # only, no provider setting needed).
         try:
             from ..observe_worker import create_callable_worker
         except ImportError:
@@ -581,34 +610,82 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
             parent=root)
         _workers.append(worker)
 
-        def _release_ask_worker() -> None:
-            ask_btn.setEnabled(True)
+        def _release(ask_worker: Any) -> None:
             try:
-                _workers.remove(worker)
+                ask_btn.setEnabled(True)
+            except Exception:
+                pass
+            try:
+                _workers.remove(ask_worker)
             except ValueError:
                 pass
             try:
-                worker.deleteLater()
+                ask_worker.deleteLater()
             except Exception:
                 pass
-            refresh_content()
+            try:
+                refresh_content()
+            except Exception:
+                pass
+
+        def _ask_foundation(question: str, smart_worker: Any) -> None:
+            # Swap the smart-parse worker for a foundation-answer one.
+            try:
+                _workers.remove(smart_worker)
+            except ValueError:
+                pass
+            try:
+                smart_worker.deleteLater()
+            except Exception:
+                pass
+            try:
+                worker2 = create_callable_worker(
+                    state.answer_free_text, (question,),
+                    {"timeout_s": 8.0}, parent=root)
+            except Exception:
+                ask_btn.setEnabled(True)
+                _render_answer(_memory_fallback(question))
+                return
+            _workers.append(worker2)
+
+            def _foundation_done(result: object) -> None:
+                _release(worker2)
+                data = result if isinstance(result, dict) else {}
+                answer = str(data.get("answer", "") or "").strip()
+                _render_answer(answer or _memory_fallback(question))
+
+            def _foundation_failed(_message: str) -> None:
+                _release(worker2)
+                _render_answer(_memory_fallback(question))
+
+            def _foundation_cancelled() -> None:
+                _release(worker2)
+                status.showMessage("Question cancelled.", 4000)
+
+            worker2.callable_finished.connect(_foundation_done)
+            worker2.callable_error.connect(_foundation_failed)
+            worker2.callable_cancelled.connect(_foundation_cancelled)
+            try:
+                worker2.start()
+            except Exception:
+                _release(worker2)
+                _render_answer(_memory_fallback(question))
 
         def _smart_done(smart: object) -> None:
-            _release_ask_worker()
             data = smart if isinstance(smart, dict) else {}
             intent = data.get("intent") or "unknown"
             if intent not in ("unknown", None, ""):
+                _release(worker)
                 _answer(str(intent), str(data.get("text", text)),
                         data.get("reply"))
             else:
-                _render_answer(_memory_fallback(text))
+                _ask_foundation(str(data.get("text", text)), worker)
 
-        def _smart_failed(message: str) -> None:
-            _release_ask_worker()
-            _render_answer(_memory_fallback(text))
+        def _smart_failed(_message: str) -> None:
+            _ask_foundation(text, worker)
 
         def _smart_cancelled() -> None:
-            _release_ask_worker()
+            _release(worker)
             status.showMessage("Question cancelled.", 4000)
 
         worker.callable_finished.connect(_smart_done)
@@ -616,54 +693,121 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
         worker.callable_cancelled.connect(_smart_cancelled)
         worker.start()
 
+    def _mic_reset() -> None:
+        """Restore the mic button to idle (idempotent, never raises).
+
+        Hoisted to tab scope so the stop branch, the finish handler,
+        and the cancel handler all share one reset — the reset must
+        exist before any click can reach it.
+        """
+        try:
+            mic_btn._is_listening = False  # type: ignore[attr-defined]
+            mic_btn._active_worker = None  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        try:
+            mic_btn.setText("🎙")
+            mic_btn.setStyleSheet("")
+            mic_btn.setToolTip(
+                "Speak instead of typing (needs a microphone)")
+        except Exception:
+            pass
+        try:
+            prev = getattr(mic_btn, "_prev_placeholder", None)
+            if prev is not None:
+                explore.setPlaceholderText(prev)
+        except Exception:
+            pass
+        try:
+            visor_face.set_state(
+                "observing" if watcher.watching else "resting")
+        except Exception:
+            pass
+
+    def _mic_release(worker: Any) -> None:
+        try:
+            _workers.remove(worker)
+        except ValueError:
+            pass
+        try:
+            worker.deleteLater()
+        except Exception:
+            pass
+
     def on_mic() -> None:
-        state.stop_speaking()
+        # Slot armor: an escaping exception natively aborts the app.
+        try:
+            _on_mic_inner()
+        except Exception as exc:
+            _mic_reset()
+            try:
+                status.showMessage(f"Microphone: {exc}", 8000)
+            except Exception:
+                pass
+
+    def _on_mic_inner() -> None:
+        try:
+            state.stop_speaking()
+        except Exception:
+            pass
         if getattr(mic_btn, "_is_listening", False):
             worker = getattr(mic_btn, "_active_worker", None)
             if worker is not None:
-                worker.cancel()
-            _reset_mic()
-            status.showMessage("Voice listening cancelled.", 3000)
+                try:
+                    worker.cancel()
+                except Exception:
+                    pass
+            _mic_reset()
+            try:
+                status.showMessage("Voice listening cancelled.", 3000)
+            except Exception:
+                pass
             return
 
-        mic_btn._is_listening = True
+        try:
+            mic_btn._prev_placeholder = explore.placeholderText()  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        mic_btn._is_listening = True  # type: ignore[attr-defined]
         mic_btn.setText("⏹")
         mic_btn.setStyleSheet("background-color: #EF4444; color: #FFFFFF; border-radius: 16px; font-weight: bold;")
         mic_btn.setToolTip("Listening... Click to stop")
-        prev_placeholder = explore.placeholderText()
         explore.setPlaceholderText("🎙️ Listening to your voice... Speak now.")
-        status.showMessage("Listening… speak now.", 6000)
+        status.showMessage("Listening… speak now (10s).", 6000)
         try:
             visor_face.set_state("listening")
         except Exception:
             pass
 
-        def _reset_mic() -> None:
-            mic_btn._is_listening = False
-            mic_btn._active_worker = None
-            mic_btn.setText("🎙")
-            mic_btn.setStyleSheet("")
-            mic_btn.setToolTip("Speak instead of typing (needs a microphone)")
-            explore.setPlaceholderText(prev_placeholder)
+        def _done(ok: bool, heard: str) -> None:
             try:
-                visor_face.set_state("observing")
+                _finish_listen(worker, ok, heard)
+            except Exception as exc:
+                _mic_reset()
+                try:
+                    status.showMessage(f"Microphone: {exc}", 8000)
+                except Exception:
+                    pass
+
+        def _cancelled() -> None:
+            # The stop branch already reset synchronously; a late
+            # worker arrival only releases its own resources.
+            try:
+                _mic_release(worker)
+                if getattr(mic_btn, "_active_worker", None) is worker:
+                    _mic_reset()
+                refresh_content()
             except Exception:
                 pass
 
         try:
             from ..voice_worker import create_listen_worker
         except ImportError:
-            ok, heard = state.try_listen(timeout_sec=6.0)
-            _done(ok, heard)
-            return
-
-        worker = create_listen_worker(state.voice_coordinator(),
-                                      timeout_sec=6.0, parent=root)
-        mic_btn._active_worker = worker
-        _workers.append(worker)
-
-        def _done(ok: bool, heard: str) -> None:
-            _reset_mic()
+            try:
+                ok, heard = state.try_listen(timeout_sec=10.0)
+            except Exception as exc:
+                ok, heard = False, str(exc)
+            _mic_reset()
             if ok:
                 explore.setText(heard)
                 explore.setFocus()
@@ -672,18 +816,53 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
             else:
                 status.showMessage(f"Microphone: {heard}", 8000)
             try:
-                _workers.remove(worker)
-            except ValueError:
-                pass
-            try:
-                worker.deleteLater()
+                refresh_content()
             except Exception:
                 pass
-            refresh_content()
+            return
 
+        try:
+            worker = create_listen_worker(state.voice_coordinator(),
+                                          timeout_sec=10.0, parent=root)
+        except Exception as exc:
+            _mic_reset()
+            status.showMessage(f"Microphone: {exc}", 8000)
+            return
+        mic_btn._active_worker = worker  # type: ignore[attr-defined]
+        _workers.append(worker)
         worker.listen_finished.connect(_done)
-        worker.listen_cancelled.connect(_reset_mic)
-        worker.start()
+        worker.listen_cancelled.connect(_cancelled)
+        try:
+            worker.start()
+        except Exception as exc:
+            _mic_reset()
+            _mic_release(worker)
+            status.showMessage(f"Microphone: {exc}", 8000)
+
+    def _finish_listen(worker: Any, ok: bool, heard: str) -> None:
+        # Stale results (a cancelled worker's late arrival) are
+        # dropped: only the active worker may write to the prompt.
+        if getattr(mic_btn, "_active_worker", None) is not worker:
+            _mic_release(worker)
+            return
+        _mic_reset()
+        _mic_release(worker)
+        if ok:
+            explore.setText(heard)
+            explore.setFocus()
+            status.showMessage(f"Heard: '{heard}'", 4000)
+            on_ask()
+        else:
+            try:
+                from mimir.voice import explain_capture_error
+                heard = explain_capture_error(RuntimeError(heard))
+            except Exception:
+                pass
+            status.showMessage(f"Microphone: {heard}", 8000)
+        try:
+            refresh_content()
+        except Exception:
+            pass
 
     def on_showcase_log(text: str) -> None:
         low = text.lower()

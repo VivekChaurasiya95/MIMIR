@@ -23,6 +23,7 @@ __all__ = [
     "INTENTS",
     "VoiceCoordinator",
     "VoiceError",
+    "explain_capture_error",
 ]
 
 #: Intents recognized by :meth:`VoiceCoordinator.parse_intent`.
@@ -146,6 +147,41 @@ _INTENT_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 class VoiceError(Exception):
     """Base error for voice coordination failures."""
+
+
+def explain_capture_error(exc: BaseException) -> str:
+    """Rewrite a capture failure as plain user guidance (pure).
+
+    Distinguishes a missing/busy microphone, a silent room (timeout),
+    and missing audio dependencies — the three capture failure modes
+    users can actually act on.
+    """
+    text = str(exc or "").strip()
+    low = text.lower()
+    if "no speech" in low:
+        return text  # already plain guidance; keep it verbatim
+    if isinstance(exc, TimeoutError) or "timed out" in low:
+        return ("Listening timed out — no speech detected. Speak a "
+                "little earlier and louder, then try again.")
+    if isinstance(exc, (ImportError, ModuleNotFoundError)):
+        return ("SpeechRecognition or PyAudio is missing "
+                "(pip install SpeechRecognition PyAudio) — "
+                "microphone capture needs both.")
+    if "speechrecognition" in low or "pyaudio" in low:
+        return ("SpeechRecognition or PyAudio is missing "
+                "(pip install SpeechRecognition PyAudio) — "
+                "microphone capture needs both.")
+    if "whisper" in low:
+        return ("openai-whisper is missing (pip install openai-whisper) "
+                "— on-device transcription needs it.")
+    if isinstance(exc, OSError) or "microphone" in low or "no device" in low:
+        return (f"Microphone unavailable ({text or 'no input device'}). "
+                "Check a mic is plugged in, set as the system default, "
+                "and not held by another app.")
+    detail = f": {text}" if text else ""
+    return ("Microphone capture failed" + detail +
+            " (check SpeechRecognition + PyAudio are installed and a "
+            "default mic exists).")
 
 
 STTBackend = Union[str, Callable[[float], Optional[str]]]
@@ -279,14 +315,30 @@ class VoiceCoordinator:
             raise ValueError(f"{field}: expected a positive number of seconds")
         return float(value)
 
-    def capture_audio(self, timeout_sec: float = 5.0) -> Optional[bytes]:
+    def capture_audio(
+        self,
+        timeout_sec: float = 5.0,
+        *,
+        phrase_time_limit: Optional[float] = None,
+        calibrate: bool = True,
+    ) -> Optional[bytes]:
         """Capture one microphone phrase; returns wav bytes or None.
 
         Split from :meth:`transcribe_wav_bytes` so the Whisper worker
         (see :mod:`mimir.voice_action`) can transcribe asynchronously
         instead of blocking the caller through capture + inference.
+        ``timeout_sec`` bounds waiting for speech to *start*;
+        ``phrase_time_limit`` (default: wait + 4s) bounds the utterance
+        itself. A short ambient-noise calibration runs first unless
+        ``calibrate`` is False, so quiet rooms and loud rooms both
+        trigger reliably.
         """
         timeout_sec = self._positive_seconds(timeout_sec, field="timeout_sec")
+        if phrase_time_limit is None:
+            phrase_time_limit = timeout_sec + 4.0
+        else:
+            phrase_time_limit = self._positive_seconds(
+                phrase_time_limit, field="phrase_time_limit")
         try:
             import speech_recognition as sr
         except ImportError:
@@ -295,16 +347,37 @@ class VoiceCoordinator:
                 "(pip install SpeechRecognition; also needs PyAudio)"
             ) from None
         recognizer = sr.Recognizer()
+        recognizer.dynamic_energy_threshold = True
         try:
             with sr.Microphone() as source:
+                if calibrate:
+                    try:
+                        recognizer.adjust_for_ambient_noise(
+                            source, duration=0.4)
+                    except Exception:
+                        pass  # a deaf room still gets a listen attempt
                 audio = recognizer.listen(
-                    source, timeout=timeout_sec, phrase_time_limit=timeout_sec
+                    source, timeout=timeout_sec,
+                    phrase_time_limit=phrase_time_limit,
                 )
         except sr.WaitTimeoutError:
             return None
-        except OSError as exc:
+        except (OSError, AttributeError) as exc:
             raise VoiceError(f"microphone unavailable: {exc}") from None
         return audio.get_wav_data()
+
+    @staticmethod
+    def list_microphones() -> list[str]:
+        """Best-effort input-device names ([] when unavailable)."""
+        try:
+            import speech_recognition as sr
+        except ImportError:
+            return []
+        try:
+            names = sr.Microphone.list_microphone_names()
+        except Exception:
+            return []
+        return [str(name) for name in names if str(name).strip()]
 
     def transcribe_wav_bytes(self, data: bytes) -> Optional[str]:
         """Transcribe wav audio with the cached Whisper tiny model."""

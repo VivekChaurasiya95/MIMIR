@@ -284,6 +284,84 @@ def build_baseline_prompt(task: str) -> str:
     )
 
 
+_KIND_SUMMARY = {
+    "question": "a question — answer it directly, grounded in your memory.",
+    "build": "a build request — produce the new code or artifact.",
+    "refactor": "a refactor request — reshape existing code safely.",
+    "plan": "a planning request — sketch the design before coding.",
+    "other": "a general request — undertake it in your own style.",
+}
+
+_STOPWORDS = frozenset(
+    "a an the and or of to in on for with how what why when where "
+    "which who do does did is are was were be been i me my you your "
+    "it its this that these those please help me".split()
+)
+
+
+def _task_keywords(task: str, limit: int = 5) -> list[str]:
+    words = re.findall(r"[a-zA-Z][a-zA-Z0-9_+-]*", task.lower())
+    seen: list[str] = []
+    for word in words:
+        if word in _STOPWORDS or len(word) < 3 or word in seen:
+            continue
+        seen.append(word)
+        if len(seen) >= limit:
+            break
+    return seen
+
+
+def _scaffold_plan(
+    task: str,
+    kind: str,
+    principles: Sequence[BehavioralPrinciple],
+) -> list[str]:
+    """Kind-aware offline steps grounded in the request wording."""
+    focus = ", ".join(f"'{w}'" for w in _task_keywords(task))
+    focus_bit = f" (focus: {focus})" if focus else ""
+    memory_bit = (
+        f"Apply your {len(principles)} retrieved principle(s) below "
+        "as you go."
+        if principles
+        else "No principles matched — Observe a repo and press Learn "
+        "so future drafts carry your style."
+    )
+    if kind == "question":
+        steps = [
+            f"1. Restate the question in your own words{focus_bit}.",
+            "2. Pull the answer from your observed history and the "
+            "invariants below — quote file/commit evidence where you "
+            "have it.",
+            "3. If memory has no evidence, say what to observe next "
+            "instead of guessing.",
+        ]
+    elif kind == "refactor":
+        steps = [
+            f"1. Locate the code under change{focus_bit} and cover it "
+            "with a quick test or a git checkpoint.",
+            "2. Reshape it in small steps, keeping behavior identical.",
+            "3. Re-run tests and diff-review against the forbidden "
+            "anti-patterns below.",
+        ]
+    elif kind == "plan":
+        steps = [
+            f"1. Break the goal{focus_bit} into milestones with "
+            "acceptance checks.",
+            "2. Name the files/modules each milestone touches.",
+            "3. Bring the plan back to Replicate to draft each "
+            "milestone in your style.",
+        ]
+    else:
+        steps = [
+            f"1. Clarify the smallest done-state{focus_bit}.",
+            "2. Draft the change following the invariants below.",
+            "3. Verify (tests / review) and record what worked as a "
+            "principle.",
+        ]
+    steps.append(f"4. {memory_bit}")
+    return steps
+
+
 class ReplicationActor:
     """Synthesizes solutions to novel problems conditioned on principles."""
 
@@ -303,15 +381,32 @@ class ReplicationActor:
         self,
         task: str,
         principles: Sequence[BehavioralPrinciple],
+        *,
+        task_kind: Optional[str] = None,
     ) -> str:
-        """Compile a novel task + principles into a steering prompt."""
+        """Compile a novel task + principles into a steering prompt.
+
+        ``task_kind`` (see :func:`mimir.foundation.classify_task_kind`)
+        steers the closing instruction: questions are answered
+        directly, while builds/refactors keep the solution-only
+        framing. ``None`` auto-classifies the task.
+        """
         task = check_str(task, field="task")
         if not isinstance(principles, (list, tuple)) or any(
             not isinstance(p, BehavioralPrinciple) for p in principles
         ):
             raise ValueError("principles: expected a list of BehavioralPrinciple")
+        if task_kind is None:
+            try:
+                from .foundation import classify_task_kind
+
+                kind = classify_task_kind(task)
+            except Exception:
+                kind = "other"
+        else:
+            kind = str(task_kind).strip().lower()
         lines = [
-            "You are MIMIR's replication engine. Solve the novel task below",
+            "You are MIMIR's replication engine. Undertake the novel task below",
             "while strictly adhering to the user's behavioral principles.",
             "",
             "Novel task:",
@@ -337,25 +432,50 @@ class ReplicationActor:
                     lines.append(f"{counter}. [{principle.id}] {anti_pattern}")
         else:
             lines.append("(none.)")
-        lines.extend(
-            [
-                "",
-                "Respond with the solution only. Do not explain the principles;",
-                "embody them.",
-            ]
-        )
+        lines.append("")
+        if kind == "question":
+            lines.extend(
+                [
+                    "Answer the question directly and completely in the user's",
+                    "own terms, grounded in the invariants above. Never reply",
+                    "with a generic template.",
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    "Respond with the solution only. Do not explain the principles;",
+                    "embody them.",
+                ]
+            )
         return "\n".join(lines)
 
     def _scaffold(
         self, task: str, principles: Sequence[BehavioralPrinciple]
     ) -> str:
-        """Deterministic offline solution scaffold (no LLM configured)."""
+        """Deterministic offline draft (no LLM configured).
+
+        Task-specific, not a bare template: it restates the request,
+        sketches a kind-aware plan grounded in the request wording,
+        then lists the retrieved invariants to embody manually.
+        """
+        try:
+            from .foundation import classify_task_kind
+
+            kind = classify_task_kind(task)
+        except Exception:
+            kind = "other"
         lines = [
             "[MIMIR scaffold -- no llm_fn configured; embody these manually]",
             f"Task: {task}",
             "",
-            "Mandatory invariants to embody:",
+            f"Understood as: {_KIND_SUMMARY.get(kind, _KIND_SUMMARY['other'])}",
+            "",
+            "Suggested plan:",
         ]
+        lines.extend(_scaffold_plan(task, kind, principles))
+        lines.append("")
+        lines.append("Mandatory invariants to embody:")
         if principles:
             for index, principle in enumerate(principles, 1):
                 lines.append(
@@ -373,6 +493,12 @@ class ReplicationActor:
                     lines.append(f"{counter}. [{principle.id}] {anti_pattern}")
         else:
             lines.append("(none.)")
+        lines.append("")
+        lines.append(
+            "Next step: start the on-device Llama-3.2 engine "
+            "(Settings → Model → Start Ollama) and press Generate "
+            "again for a full synthesis grounded in these principles."
+        )
         return "\n".join(lines)
 
     def _complete(self, prompt: str, *, kind: str) -> str:

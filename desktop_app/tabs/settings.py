@@ -504,7 +504,8 @@ def build_settings_tab(state: AppState, status: Any) -> Any:
     api_key_input.setMaximumWidth(360)
     api_key_input.setText(state.prefs.api_key or "")
     model_name_input = QtWidgets.QLineEdit(state.prefs.model_name or "")
-    model_name_input.setPlaceholderText("e.g. gpt-4o-mini (blank = default)")
+    model_name_input.setPlaceholderText(
+        "e.g. llama3.2:1b (blank = best local)")
     model_name_input.setMaximumWidth(360)
     model_endpoint_input = QtWidgets.QLineEdit(state.prefs.model_endpoint or "")
     model_endpoint_input.setPlaceholderText("http://127.0.0.1:11434")

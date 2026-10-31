@@ -119,6 +119,8 @@ class AppState:
         default=None, repr=False)
     _sensory: Any = field(default=None, repr=False)
     _sensory_tokens: list[Any] = field(default_factory=list, repr=False)
+    # Latest one-line activity insight while wandering ("Notices: ...").
+    last_activity_note: str = ""
 
     def __post_init__(self) -> None:
         if self.action_registry is None:
@@ -385,17 +387,23 @@ class AppState:
             VisorState.OBSERVING if watching else VisorState.RESTING)
 
     def voice_coordinator(self) -> VoiceCoordinator:
-        """Speech coordinator honoring the user's voice/language prefs."""
+        """Speech coordinator honoring the user's voice/language prefs.
+
+        Cached per (voice, language) key so repeated calls reuse one
+        coordinator, while a Settings change rebuilds it instead of
+        serving a stale voice or transcription language.
+        """
+        language = (getattr(self.prefs, "language", "") or "").strip().lower()
+        whisper_lang = ("hi" if "hindi" in language or "hinglish" in language
+                        else "en")
+        voice_name = ((getattr(self.prefs, "voice_persona", "") or "").strip()
+                      or "en-US-AriaNeural")
+        key = (voice_name, whisper_lang)
         inst = getattr(self, "_voice_coordinator_instance", None)
-        if inst is None:
-            language = (getattr(self.prefs, "language", "") or "").strip().lower()
-            whisper_lang = "hi" if "hindi" in language or "hinglish" in language else "en"
-            inst = VoiceCoordinator(
-                voice=(getattr(self.prefs, "voice_persona", "") or "").strip()
-                or "en-US-AriaNeural",
-                language=whisper_lang,
-            )
+        if inst is None or getattr(self, "_voice_coordinator_key", None) != key:
+            inst = VoiceCoordinator(voice=voice_name, language=whisper_lang)
             self._voice_coordinator_instance = inst
+            self._voice_coordinator_key = key
         return inst
 
     def stop_speaking(self) -> None:
@@ -519,6 +527,76 @@ class AppState:
         if reply:
             smart["reply"] = reply
         return smart
+
+    def answer_free_text(
+        self, text: str, *, timeout_s: float = 8.0
+    ) -> dict[str, str]:
+        """Answer open-ended text via the Llama-3.2 foundation.
+
+        Tries the on-device foundation model (grounded in the top
+        memory principles) and fails closed to an offline
+        memory-grounded answer — never raises for backend reasons, so
+        the Home tab can call it on a worker and always render.
+        Returns ``{"answer", "source"}`` with source ``"llama"`` or
+        ``"memory"``.
+        """
+        cleaned = (text or "").strip()
+        if not cleaned:
+            raise ValueError("text: expected a non-empty question")
+        try:
+            from mimir.foundation import (
+                build_foundation_prompt,
+                classify_task_kind,
+                query_local_llama_text,
+            )
+            kind = classify_task_kind(cleaned)
+            try:
+                hits = self.search(cleaned, top_k=4, min_confidence=0.0)
+            except Exception:
+                hits = []
+            prompt = build_foundation_prompt(
+                cleaned, principles=hits, task_kind=kind)
+            endpoint = (
+                getattr(self.prefs, "model_endpoint", "") or "").strip()
+            model = (
+                getattr(self.prefs, "model_name", "") or "").strip()
+            answer = query_local_llama_text(
+                prompt,
+                endpoint=endpoint or
+                "http://127.0.0.1:11434",
+                model=model or None,
+                timeout_s=timeout_s,
+            )
+        except ValueError:
+            raise
+        except Exception:
+            answer = None
+        if answer:
+            return {"answer": answer, "source": "llama"}
+        return {"answer": self._offline_answer(cleaned),
+                "source": "memory"}
+
+    def _offline_answer(self, text: str) -> str:
+        """Memory-grounded answer when Llama is unreachable."""
+        try:
+            hits = self.search(text, top_k=3, min_confidence=0.0)
+        except Exception:
+            hits = []
+        lines = [f'You asked: "{text[:200]}"']
+        if hits:
+            names = "; ".join(
+                f"{h.name} [{h.id}]" for h in hits)
+            lines.append(f"Relevant habits in your memory: {names}.")
+            lines.append("Head to the Replicate tab to apply them to "
+                         "this task.")
+        else:
+            lines.append("Your Behavioral Memory has no matching habits "
+                         "yet — Observe a repo and press Learn Principles "
+                         "so Habi answers in your style.")
+        lines.append("Tip: start the on-device Llama-3.2 engine "
+                     "(Settings → Model → Start Ollama) for full "
+                     "conversational answers.")
+        return "\n".join(lines)
 
     def voice_service(
         self,
