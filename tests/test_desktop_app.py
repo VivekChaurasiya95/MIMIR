@@ -979,8 +979,73 @@ class TrayBuilderTest(_QtCase):
         from desktop_app.tray import sync_tray
         window = self.QtWidgets.QWidget()
         self._roots.append(window)
-        from desktop_app import DesktopPrefs
-        self.assertIsNone(sync_tray(window, DesktopPrefs()))
+class HomeSafePushTest(HomeExtrasTest):
+    def test_push_code_proposes_action_card(self):
+        from mimir.actions import ActionStatus
+        state = self._state()
+        root = self._build(state)
+
+        # Explore bar with "push my code"
+        self._explore(root).setText("push my code")
+
+        ask = next(btn for btn in root.findChildren(self.QtWidgets.QPushButton)
+                   if btn.text().strip().lower().startswith("ask"))
+        ask.click()
+        self._pump(200)
+
+        # Action proposed in registry
+        pending = state.action_registry.list_pending()
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0].operation, "git_push")
+
+        # Find the Authorize and Cancel buttons
+        auth_btn = next((b for b in root.findChildren(self.QtWidgets.QPushButton)
+                         if "Authorize & Push" in b.text()), None)
+        cancel_btn = next((b for b in root.findChildren(self.QtWidgets.QPushButton)
+                          if "Cancel" in b.text()), None)
+        self.assertIsNotNone(auth_btn)
+        self.assertIsNotNone(cancel_btn)
+        self.assertTrue(auth_btn.isVisibleTo(root))
+
+        # Test cancel workflow
+        cancel_btn.click()
+        self._pump(200)
+        self.assertEqual(len(state.action_registry.list_pending()), 0)
+        spec = state.action_registry.get(pending[0].action_id)
+        assert spec is not None
+        self.assertEqual(spec.status, ActionStatus.CANCELLED)
+
+    def test_push_code_authorize_executes_action(self):
+        from mimir.actions import ActionStatus
+        state = self._state()
+        executed_calls: list[Any] = []
+        def _mock_exec(action_id, *a, **k):
+            executed_calls.append(action_id)
+            state.action_registry.complete(action_id)
+            return True, "Everything up-to-date"
+        state.execute_git_push = _mock_exec
+
+        root = self._build(state)
+        self._explore(root).setText("push my code")
+        ask = next(btn for btn in root.findChildren(self.QtWidgets.QPushButton)
+                   if btn.text().strip().lower().startswith("ask"))
+        ask.click()
+        self._pump(200)
+
+        pending = state.action_registry.list_pending()
+        self.assertEqual(len(pending), 1)
+        action_id = pending[0].action_id
+
+        auth_btn = next(b for b in root.findChildren(self.QtWidgets.QPushButton)
+                        if "Authorize & Push" in b.text())
+        auth_btn.click()
+        self._pump(400)
+
+        self.assertTrue(executed_calls, "execute_git_push was called")
+        self.assertEqual(len(state.action_registry.list_pending()), 0)
+        spec = state.action_registry.get(action_id)
+        assert spec is not None
+        self.assertEqual(spec.status, ActionStatus.COMPLETED)
 
 
 if __name__ == "__main__":

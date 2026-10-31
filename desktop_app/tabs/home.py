@@ -24,6 +24,7 @@ from ._qt import load_qt
 __all__ = ["build_home_tab"]
 
 CHIP_PROMPTS = (
+    ("🚀 Push code", "push my code"),
     ("✦ Explain this code", "Explain this code: "),
     ("◫ Plan a feature", "Help me plan a feature: "),
     ("☼ Brainstorm ideas", "Brainstorm ideas for: "),
@@ -225,7 +226,8 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
         chip.setObjectName("chip")
         chip.clicked.connect(
             lambda _=False, s=seed: (explore.setText(s),
-                                     explore.setFocus()))
+                                     explore.setFocus(),
+                                     on_ask() if s == "push my code" else None))
         chips.addWidget(chip)
     more = QtWidgets.QPushButton("··· More")
     more.setObjectName("chip")
@@ -277,6 +279,81 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
     rl.addWidget(stop_speech_btn)
     rl.addWidget(reply_copy)
     layout.addWidget(reply_box)
+
+    # Two-Phase Safe Action Proposal Card (Phase 5 Safe Execution)
+    proposal_card = QtWidgets.QFrame()
+    proposal_card.setObjectName("card")
+    proposal_card.setMaximumWidth(700)
+    proposal_card.setStyleSheet("""
+        QFrame#card {
+            background: #FFFFFF;
+            border: 1px solid #E2E8F0;
+            border-left: 4px solid #10B981;
+            border-radius: 10px;
+        }
+    """)
+    proposal_card.setVisible(False)
+    pl = QtWidgets.QVBoxLayout(proposal_card)
+    pl.setContentsMargins(16, 14, 16, 14)
+    pl.setSpacing(10)
+
+    prop_header = QtWidgets.QHBoxLayout()
+    prop_icon = QtWidgets.QLabel("🚀")
+    prop_icon.setStyleSheet("font-size: 18px;")
+    prop_title = QtWidgets.QLabel("Safe Action Proposal · Git Push")
+    prop_title.setStyleSheet("font-weight: 600; font-size: 14px; color: #0F172A;")
+    prop_badge = QtWidgets.QLabel("✓ Invariant Verified")
+    prop_badge.setStyleSheet("background: #DCFCE7; color: #166534; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 6px;")
+    prop_header.addWidget(prop_icon)
+    prop_header.addWidget(prop_title)
+    prop_header.addStretch(1)
+    prop_header.addWidget(prop_badge)
+    pl.addLayout(prop_header)
+
+    prop_details = QtWidgets.QLabel("")
+    prop_details.setStyleSheet("color: #475569; font-size: 12px; line-height: 1.4;")
+    prop_details.setWordWrap(True)
+    pl.addWidget(prop_details)
+
+    prop_safety = QtWidgets.QLabel("")
+    prop_safety.setStyleSheet("color: #059669; font-size: 12px; font-weight: 500;")
+    prop_safety.setWordWrap(True)
+    pl.addWidget(prop_safety)
+
+    prop_btn_row = QtWidgets.QHBoxLayout()
+    prop_btn_row.setSpacing(10)
+    auth_push_btn = QtWidgets.QPushButton("✓ Authorize & Push")
+    auth_push_btn.setStyleSheet("""
+        QPushButton {
+            background: #10B981;
+            color: #FFFFFF;
+            border: 0;
+            border-radius: 8px;
+            padding: 7px 16px;
+            font-weight: 600;
+            font-size: 12px;
+        }
+        QPushButton:hover {
+            background: #059669;
+        }
+        QPushButton:disabled {
+            background: #94A3B8;
+        }
+    """)
+    cancel_prop_btn = QtWidgets.QPushButton("✕ Cancel")
+    cancel_prop_btn.setObjectName("soft")
+    cancel_prop_btn.setStyleSheet("padding: 6px 14px; font-size: 12px;")
+
+    prop_spin_status = QtWidgets.QLabel("")
+    prop_spin_status.setStyleSheet("color: #64748B; font-size: 12px; font-style: italic;")
+
+    prop_btn_row.addWidget(auth_push_btn)
+    prop_btn_row.addWidget(cancel_prop_btn)
+    prop_btn_row.addWidget(prop_spin_status)
+    prop_btn_row.addStretch(1)
+    pl.addLayout(prop_btn_row)
+
+    layout.addWidget(proposal_card)
 
     kpi_row = QtWidgets.QHBoxLayout()
     kpi_row.setSpacing(14)
@@ -548,7 +625,187 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
                 "to explain code, plan a feature, or run Replicate to "
                 "draft solutions.")
 
+    _pending_push: dict[str, Any] = {}
+
+    def _cancel_push() -> None:
+        if _pending_push and _pending_push.get("action_id"):
+            try:
+                state.action_registry.cancel(_pending_push["action_id"], reason="User cancelled")
+            except Exception:
+                pass
+        _pending_push.clear()
+        proposal_card.setVisible(False)
+        try:
+            visor_face.set_state("observing" if watcher.watching else "resting")
+        except Exception:
+            pass
+        status.showMessage("Push proposal cancelled.", 3000)
+        cancellation_msg = "Push proposal cancelled. Your repository remains untouched."
+        reply.setText(f"{state.prefs.assistant_name}:\n{cancellation_msg}")
+        _speak_answer(cancellation_msg)
+
+    def _execute_push() -> None:
+        if not _pending_push or not _pending_push.get("action_id"):
+            status.showMessage("No pending push proposal to execute.", 4000)
+            return
+
+        action_id = _pending_push["action_id"]
+        remote = _pending_push.get("remote", "origin")
+        branch = _pending_push.get("branch", "main")
+        repo_dir = _pending_push.get("repo_dir", "")
+
+        try:
+            state.action_registry.authorize(
+                action_id,
+                authorization_type="explicit_confirmation",
+                granted_permissions=("git_push", "workspace_write"),
+            )
+        except Exception:
+            pass
+
+        auth_push_btn.setEnabled(False)
+        cancel_prop_btn.setEnabled(False)
+        prop_spin_status.setText(f"Pushing to {remote}/{branch} in background…")
+        status.showMessage(f"Pushing {branch} to {remote}…", 6000)
+        try:
+            visor_face.set_state("driving")
+        except Exception:
+            pass
+
+        try:
+            from ..observe_worker import create_callable_worker
+        except ImportError:
+            ok, out = state.execute_git_push(action_id, repo_dir, remote, branch)
+            _on_push_finished(ok, out)
+            return
+
+        push_worker = create_callable_worker(
+            state.execute_git_push,
+            (action_id, repo_dir, remote, branch),
+            parent=root,
+        )
+        _workers.append(push_worker)
+
+        def _push_done(res: object) -> None:
+            try:
+                _workers.remove(push_worker)
+            except ValueError:
+                pass
+            try:
+                push_worker.deleteLater()
+            except Exception:
+                pass
+            ok, out = (True, "") if not isinstance(res, (tuple, list)) else (bool(res[0]), str(res[1]))
+            _on_push_finished(ok, out)
+
+        def _push_failed(err_msg: str) -> None:
+            try:
+                _workers.remove(push_worker)
+            except ValueError:
+                pass
+            try:
+                push_worker.deleteLater()
+            except Exception:
+                pass
+            _on_push_finished(False, err_msg)
+
+        push_worker.callable_finished.connect(_push_done)
+        push_worker.callable_error.connect(_push_failed)
+        push_worker.start()
+
+    def _on_push_finished(ok: bool, out: str) -> None:
+        branch = _pending_push.get("branch", "main")
+        remote = _pending_push.get("remote", "origin")
+        auth_push_btn.setVisible(False)
+        cancel_prop_btn.setText("Close")
+        cancel_prop_btn.setEnabled(True)
+        prop_spin_status.setText("")
+
+        if ok:
+            try:
+                visor_face.set_state("observing" if watcher.watching else "resting")
+            except Exception:
+                pass
+            prop_badge.setText("✓ Pushed to GitHub")
+            prop_badge.setStyleSheet("background: #DCFCE7; color: #166534; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 6px;")
+            prop_safety.setText(f"✅ Successfully pushed branch '{branch}' to {remote}/{branch}.\n{out}")
+            prop_safety.setStyleSheet("color: #059669; font-size: 12px; font-weight: 500;")
+            status.showMessage("Git push completed successfully.", 5000)
+            announcement = f"Successfully pushed your changes to GitHub on branch '{branch}'."
+            reply.setText(f"{state.prefs.assistant_name}:\n{announcement}\n\n[Output]\n{out}")
+            _speak_answer(announcement)
+        else:
+            try:
+                visor_face.set_state("resting")
+            except Exception:
+                pass
+            prop_badge.setText("✕ Push Failed")
+            prop_badge.setStyleSheet("background: #FEE2E2; color: #991B1B; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 6px;")
+            prop_safety.setText(f"✕ Push could not complete:\n{out}")
+            prop_safety.setStyleSheet("color: #DC2626; font-size: 12px; font-weight: 500;")
+            status.showMessage(f"Git push failed: {out[:60]}", 8000)
+            err_announcement = f"Push could not complete. {out[:120]}"
+            reply.setText(f"{state.prefs.assistant_name}:\n{err_announcement}")
+            _speak_answer(err_announcement)
+
+        _pending_push.clear()
+
+    def _propose_push() -> None:
+        state.stop_speaking()
+        prop = state.propose_git_push()
+        _pending_push.clear()
+        _pending_push.update(prop)
+
+        prop_details.setText(
+            f"<b>Repository:</b> {prop['repo_name']} (<code>{prop['repo_dir']}</code>)<br>"
+            f"<b>Target:</b> <code>{prop['remote']}/{prop['branch']}</code>"
+        )
+        if prop["safety_ok"]:
+            prop_badge.setText("✓ Invariant Verified")
+            prop_badge.setStyleSheet("background: #DCFCE7; color: #166534; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 6px;")
+            status_desc = "Working directory is clean. No uncommitted secret files." if not prop["status_lines"] else f"{len(prop['status_lines'])} local file(s) modified/staged."
+            prop_safety.setText(f"✓ Safety invariants passed (0 secret / key conflicts). {status_desc}")
+            prop_safety.setStyleSheet("color: #059669; font-size: 12px; font-weight: 500;")
+            auth_push_btn.setEnabled(True)
+        else:
+            prop_badge.setText("⚠ Safety Warning")
+            prop_badge.setStyleSheet("background: #FEE2E2; color: #991B1B; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 6px;")
+            warn_str = " | ".join(prop["warnings"])
+            prop_safety.setText(f"⚠ Safety Check: {warn_str}")
+            prop_safety.setStyleSheet("color: #DC2626; font-size: 12px; font-weight: 500;")
+            auth_push_btn.setEnabled(False)
+
+        auth_push_btn.setText("✓ Authorize & Push")
+        auth_push_btn.setVisible(True)
+        cancel_prop_btn.setVisible(True)
+        cancel_prop_btn.setText("✕ Cancel")
+        cancel_prop_btn.setEnabled(True)
+        prop_spin_status.setText("")
+        proposal_card.setVisible(True)
+
+        spoken = (
+            f"I inspected your repository on branch '{prop['branch']}'. "
+            + ("Safety invariants passed with no secret conflicts. " if prop["safety_ok"] else "Warning: safety invariants detected conflicts. ")
+            + f"Ready to push to '{prop['remote']}/{prop['branch']}'. Say 'go ahead' or click Authorize & Push to execute."
+        )
+        reply.setText(f"{state.prefs.assistant_name}:\n{spoken}")
+        reply_box.setVisible(True)
+        status.showMessage("Git push proposed. Ready for authorization.", 4000)
+        _speak_answer(spoken)
+
+    auth_push_btn.clicked.connect(_execute_push)
+    cancel_prop_btn.clicked.connect(_cancel_push)
+
     def _answer(intent: str, text: str, llama_reply: Any = None) -> None:
+        if intent == "push_code":
+            _propose_push()
+            return
+        if intent == "approve" and _pending_push and _pending_push.get("action_id"):
+            _execute_push()
+            return
+        if intent in ("stop", "cancel") and _pending_push:
+            _cancel_push()
+            return
         # respond() always runs: it owns the stop E-stop latch and the
         # approval binding. Llama's phrasing only rewords the terse
         # control replies (stop/sleep); knowledge and approval answers
@@ -590,10 +847,12 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
             _answer(parsed["intent"], parsed["text"])
             return
         # Unknown to the keyword parser: consult the on-device Llama
-        # foundation off the UI thread — structured intent first, then
-        # a full conversational answer — failing closed to the memory
-        # summary when the daemon is down. Always attempted (loopback
-        # only, no provider setting needed).
+        # foundation off the UI thread only if a live provider is enabled,
+        # failing closed immediately to the memory fallback when offline.
+        provider = (getattr(state.prefs, "model_provider", "") or "").strip().lower()
+        if provider in ("offline", "", "none"):
+            _render_answer(_memory_fallback(text))
+            return
         try:
             from ..observe_worker import create_callable_worker
         except ImportError:

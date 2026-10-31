@@ -725,6 +725,146 @@ class AppState:
         })
         return p
 
+    def propose_git_push(self, repo_path: str = "") -> dict[str, Any]:
+        """Inspect repository, verify safety invariants, and propose git push (Phase 5)."""
+        import subprocess
+        from pathlib import Path
+        from mimir.actions import ActionSpec, ActionStatus
+
+        target_dir = Path(repo_path).resolve() if repo_path else (
+            Path(self.prefs.last_repo).resolve() if self.prefs.last_repo and Path(self.prefs.last_repo).is_dir()
+            else Path.cwd().resolve()
+        )
+
+        branch = "main"
+        remote = "origin"
+        status_lines: list[str] = []
+        is_git = False
+        try:
+            res_git = subprocess.run(
+                ["git", "rev-parse", "--is-inside-work-tree"],
+                cwd=str(target_dir), capture_output=True, text=True, timeout=5
+            )
+            is_git = (res_git.returncode == 0 and "true" in res_git.stdout.strip())
+        except Exception:
+            is_git = False
+
+        if is_git:
+            try:
+                b_res = subprocess.run(
+                    ["git", "branch", "--show-current"],
+                    cwd=str(target_dir), capture_output=True, text=True, timeout=5
+                )
+                if b_res.returncode == 0 and b_res.stdout.strip():
+                    branch = b_res.stdout.strip()
+            except Exception:
+                pass
+            try:
+                r_res = subprocess.run(
+                    ["git", "remote"],
+                    cwd=str(target_dir), capture_output=True, text=True, timeout=5
+                )
+                if r_res.returncode == 0 and r_res.stdout.strip():
+                    remote = r_res.stdout.strip().splitlines()[0]
+            except Exception:
+                pass
+            try:
+                s_res = subprocess.run(
+                    ["git", "status", "--porcelain"],
+                    cwd=str(target_dir), capture_output=True, text=True, timeout=5
+                )
+                if s_res.returncode == 0:
+                    status_lines = [ln.strip() for ln in s_res.stdout.strip().splitlines() if ln.strip()]
+            except Exception:
+                pass
+
+        safety_ok = True
+        warnings: list[str] = []
+        secret_patterns = (".env", "id_rsa", ".pem", ".key", "credentials", "secrets.")
+        for line in status_lines:
+            fname = line.split()[-1] if line.split() else ""
+            if any(p in fname.lower() for p in secret_patterns):
+                safety_ok = False
+                warnings.append(f"Forbidden sensitive file detected: '{fname}'")
+
+        try:
+            negative_principles = [p for p in self.list_principles() if p.category == "safety" or "forbid" in p.name.lower()]
+            for p in negative_principles:
+                inv = (p.latent_invariant or "").lower()
+                for line in status_lines:
+                    fname = (line.split()[-1] if line.split() else "").lower()
+                    if fname and fname in inv:
+                        safety_ok = False
+                        warnings.append(f"Conflicts with negative invariant: {p.name}")
+        except Exception:
+            pass
+
+        spec = self.action_registry.propose(
+            operation="git_push",
+            target=f"{remote}/{branch}",
+            file_or_element=str(target_dir),
+            reason=f"Push branch '{branch}' to '{remote}' safely after verifying repository state and invariants.",
+            required_permissions=("git_push", "workspace_write"),
+        )
+
+        return {
+            "action_id": spec.action_id,
+            "repo_dir": str(target_dir),
+            "repo_name": target_dir.name,
+            "branch": branch,
+            "remote": remote,
+            "is_git": is_git,
+            "status_lines": status_lines,
+            "safety_ok": safety_ok,
+            "warnings": warnings,
+            "spec": spec,
+        }
+
+    def execute_git_push(self, action_id: str, repo_dir: str = "", remote: str = "origin", branch: str = "main") -> tuple[bool, str]:
+        """Safely execute an authorized git push action on the repository."""
+        import subprocess
+        from pathlib import Path
+        from mimir.actions import ActionStatus
+
+        if self.safety is not None and self.safety.estopped:
+            return False, "Cannot execute: Safety controller is latched (E-stop active)."
+
+        spec = self.action_registry.get(action_id)
+        if spec is None:
+            return False, f"Action '{action_id}' not found in registry."
+
+        try:
+            self.action_registry.mark_executing(action_id)
+        except Exception:
+            pass
+
+        target_dir = repo_dir or spec.file_or_element or str(Path.cwd().resolve())
+
+        try:
+            res = subprocess.run(
+                ["git", "push", remote, branch],
+                cwd=target_dir,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            out = (res.stdout + "\n" + res.stderr).strip()
+            if res.returncode == 0:
+                self.action_registry.complete(action_id)
+                self._emit(EventType.ACTION_COMPLETED, "action_executor.git_push", {
+                    "action_id": action_id, "output": out[:500]
+                })
+                return True, out or f"Branch '{branch}' up to date with '{remote}'."
+            else:
+                self.action_registry.fail(action_id, reason=out[:300])
+                self._emit(EventType.ACTION_FAILED, "action_executor.git_push", {
+                    "action_id": action_id, "error": out[:500]
+                })
+                return False, out or "git push returned a non-zero exit code."
+        except Exception as exc:
+            self.action_registry.fail(action_id, reason=str(exc))
+            return False, str(exc)
+
     def _legacy_reply(self, intent: str, text: str) -> str:
         """Companion wording for a parsed intent (no side effects)."""
         from .presenters import format_memory_summary
