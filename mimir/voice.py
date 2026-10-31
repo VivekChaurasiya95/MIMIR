@@ -411,11 +411,10 @@ class VoiceCoordinator:
         if self._whisper_model is None:
             self._whisper_model = whisper.load_model("tiny")
         try:
+            kwargs: dict[str, Any] = {"fp16": False}
             if self.language:
-                result = self._whisper_model.transcribe(
-                    path, language=self.language)
-            else:
-                result = self._whisper_model.transcribe(path)
+                kwargs["language"] = self.language
+            result = self._whisper_model.transcribe(path, **kwargs)
         except Exception as exc:
             raise VoiceError(f"whisper transcription failed: {exc}") from exc
         text = (result.get("text") or "").strip()
