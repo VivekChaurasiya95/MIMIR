@@ -12,9 +12,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import contextlib
 import io
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from mimir.cli import _run_cobot_cmd, build_parser, format_store_summary, main
 from mimir.principles import (
@@ -250,6 +252,66 @@ class CobotLoopTest(unittest.TestCase):
                 _run_cobot_cmd(
                     args, voice=QuittingVoice([]), controller=controller
                 )
+
+
+class DoctorTest(unittest.TestCase):
+    """Phase 0: `mimir doctor` reports one line per check (mocked probes)."""
+
+    def _passing_probes(self):
+        return [
+            mock.patch("mimir.doctor.audio_backend_status",
+                       return_value={"available": True,
+                                     "backend": "sounddevice",
+                                     "microphones": ["mic"],
+                                     "hint": ""}),
+            mock.patch.dict(sys.modules,
+                            {"whisper": mock.MagicMock()}),
+            mock.patch("mimir.doctor._ensure_ffmpeg",
+                       return_value="C:/tools/ffmpeg.exe"),
+            mock.patch("mimir.doctor.is_ollama_available",
+                       return_value=True),
+            mock.patch("mimir.doctor.get_available_local_models",
+                       return_value=["llama3.2:1b"]),
+        ]
+
+    def test_all_pass_exit_zero(self):
+        for patcher in self._passing_probes():
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        code, out = _run(["doctor", "--store", ":memory:"])
+        self.assertEqual(code, 0)
+        self.assertEqual(out.count("[PASS]"), 5)
+        self.assertNotIn("[FAIL]", out)
+        self.assertIn("Microphone hardware open", out)
+        self.assertIn("Whisper ready", out)
+        self.assertIn("ffmpeg available", out)
+        self.assertIn("Local Ollama Llama 3.2 connected", out)
+        self.assertIn("Storage healthy", out)
+
+    def test_mic_failure_exits_nonzero(self):
+        for patcher in self._passing_probes():
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        with mock.patch("mimir.doctor.audio_backend_status",
+                        return_value={"available": False,
+                                      "backend": "none",
+                                      "microphones": [],
+                                      "hint": "no backend"}):
+            code, out = _run(["doctor", "--store", ":memory:"])
+        self.assertEqual(code, 1)
+        self.assertIn("[FAIL] Microphone unavailable", out)
+        self.assertEqual(out.count("[PASS]"), 4)
+
+    def test_ollama_down_is_failure_with_hint(self):
+        for patcher in self._passing_probes():
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        with mock.patch("mimir.doctor.is_ollama_available",
+                        return_value=False):
+            code, out = _run(["doctor", "--store", ":memory:"])
+        self.assertEqual(code, 1)
+        self.assertIn("[FAIL] Ollama down", out)
+        self.assertIn("ollama serve", out)
 
 
 class ParserTest(unittest.TestCase):

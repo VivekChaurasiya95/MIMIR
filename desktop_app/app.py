@@ -182,7 +182,7 @@ class MainWindow:
         set_density(getattr(self.state.prefs, "spacious", True))
 
         window = QtWidgets.QMainWindow()
-        window.setWindowTitle("Habitous — Intelligent Developer Companion")
+        window.setWindowTitle("MIMIR — Intelligent Developer Companion")
         window.resize(1280, 800)
         window.setMinimumSize(1024, 640)
         window.setStyleSheet(qt_stylesheet(
@@ -191,7 +191,7 @@ class MainWindow:
         ))
 
         status = window.statusBar()
-        status.showMessage(f"Habitous Memory: {self.state.store_path}", 6000)
+        status.showMessage(f"MIMIR Memory: {self.state.store_path}", 6000)
 
         # System-tray companion (Settings → General owns the preference).
         try:
@@ -252,7 +252,7 @@ class MainWindow:
                     pass
                 try:
                     tray.showMessage(
-                        "Habitous",
+                        "MIMIR",
                         "Still here — click the tray icon to reopen.")
                 except Exception:
                     pass
@@ -275,7 +275,7 @@ class MainWindow:
         brand_row.setSpacing(10)
         brand_visor = CobotVisorWidget(width=38, height=32, on_click=self.toggle_floating_cobot)
         brand_visor.setToolTip("Click to toggle floating Habi companion")
-        brand = QtWidgets.QLabel("Habitous.")
+        brand = QtWidgets.QLabel("MIMIR.")
         brand.setObjectName("brand")
         brand_row.addWidget(brand_visor)
         brand_row.addWidget(brand)

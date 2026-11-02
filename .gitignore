@@ -35,6 +35,7 @@ dist/
 *.egg-info/
 tmp*/
 mimir-ffmpeg-*/
+mimir_drive_*/
 .pytest_cache/
 .coverage
 htmlcov/

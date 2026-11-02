@@ -1,0 +1,5 @@
+# MIMIR 3.0 Gen 2.5 Cobot — Control Tower runtime
+streamlit>=1.30
+ollama>=0.4
+pytest>=8
+pydantic>=2

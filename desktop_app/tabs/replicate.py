@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..presenters import format_replication_report, rel_time_ago
+from ..presenters import (
+    extract_code_block,
+    format_replication_report,
+    infer_file_target,
+    rel_time_ago,
+)
 from ..state import AppState, get_llm_fn
 from ._layout import (
     ClickableCard,
@@ -29,12 +34,12 @@ def build_replicate_tab(state: AppState, status: Any) -> Any:
     root, layout = page()
     layout.addWidget(page_head(
         "Replicate", "Apply your style to new tasks.",
-        "Describe what you want, and Habitous will use your learned principles."))
+        "Describe what you want, and MIMIR will use your learned principles."))
 
     layout.addWidget(functionality_banner(
         "⧉",
         "Authentic Style Synthesis",
-        "Describe any task, feature implementation, or refactor. Habitous automatically selects your "
+        "Describe any task, feature implementation, or refactor. MIMIR automatically selects your "
         "highest-confidence behavioral principles and drafts code that matches your authentic conventions.",
         pills=[("Style Matching", "confirmed"), ("Principle Injection", "confirmed"), ("Contrastive Guardrails", "learning")],
         icon_cls="icon_box_green",
@@ -131,15 +136,28 @@ def build_replicate_tab(state: AppState, status: Any) -> Any:
     copy_btn = QtWidgets.QPushButton("Copy solution")
     copy_btn.setObjectName("soft")
     copy_btn.setEnabled(False)
+    apply_file_btn = QtWidgets.QPushButton("💾 Save to File…")
+    apply_file_btn.setObjectName("soft")
+    apply_file_btn.setEnabled(False)
+    apply_file_btn.setToolTip(
+        "Save this replicated solution directly into a workspace project file.")
     drive_btn = QtWidgets.QPushButton("⚡ Apply with Habi")
     drive_btn.setObjectName("soft")
     drive_btn.setEnabled(False)
     drive_btn.setToolTip(
         "Habi glides the cursor and types this solution with human "
         "cadence. ESC or a mouse nudge stops it instantly.")
-    out_lay.addLayout(actions_row(copy_btn, drive_btn))
+    propose_btn = QtWidgets.QPushButton("Propose action")
+    propose_btn.setObjectName("soft")
+    propose_btn.setToolTip(
+        "Draft a typed, risk-scored action plan from this task "
+        "and show it as a proposal card for review.")
+    out_lay.addLayout(actions_row(copy_btn, apply_file_btn, drive_btn, propose_btn))
     out_box.setVisible(False)
     layout.addWidget(out_box)
+    proposal_host = QtWidgets.QVBoxLayout()
+    proposal_host.setSpacing(10)
+    layout.addLayout(proposal_host)
 
     feed_head = QtWidgets.QHBoxLayout()
     feed_head.addWidget(overline("Recent tasks"))
@@ -154,6 +172,8 @@ def build_replicate_tab(state: AppState, status: Any) -> Any:
     layout.addStretch(1)
 
     last_solution = {"text": ""}
+    last_task = {"text": ""}
+    proposal: dict[str, Any] = {"action_id": "", "plan": None,                                "card": None}
     show_all = {"on": False}
     _workers: list[Any] = []
 
@@ -402,7 +422,9 @@ def build_replicate_tab(state: AppState, status: Any) -> Any:
         output.setPlainText(f"Replicate failed: {exc}")
         set_verdict("", "muted")
         copy_btn.setEnabled(False)
+        apply_file_btn.setEnabled(False)
         drive_btn.setEnabled(False)
+        propose_btn.setEnabled(False)
 
     def on_generate() -> None:
         # Computational isolation (plan section 6): synthesis runs on a
@@ -416,6 +438,13 @@ def build_replicate_tab(state: AppState, status: Any) -> Any:
         if not task:
             status.showMessage("Describe a task first.", 4000)
             return
+        if proposal.get("action_id"):
+            try:
+                state.action_registry.cancel(
+                    proposal["action_id"], "superseded by newer draft")
+            except Exception:
+                pass
+            _clear_proposal()
         top_k = TOP_K_OPTIONS[max(0, principles_combo.currentIndex())]
         scope = project_combo.currentText().strip() or None
         from ..replicate_worker import create_replicate_worker
@@ -487,8 +516,11 @@ def build_replicate_tab(state: AppState, status: Any) -> Any:
         output.setPlainText(report)
         out_box.setVisible(True)
         last_solution["text"] = result.replicated_solution
+        last_task["text"] = task
         copy_btn.setEnabled(True)
+        apply_file_btn.setEnabled(True)
         drive_btn.setEnabled(True)
+        propose_btn.setEnabled(True)
         compliant = bool(result.compliance_report.get("compliant", True))
         state.prefs = state.prefs.record_task(
             task[:60], project,
@@ -540,10 +572,60 @@ def build_replicate_tab(state: AppState, status: Any) -> Any:
             return
         status.showMessage("Saved as a Behavioral Memory rule.", 5000)
 
+    def on_apply_file() -> None:
+        raw_solution = last_solution.get("text", "").strip()
+        if not raw_solution:
+            status.showMessage("Generate a solution first.", 4000)
+            return
+        solution = extract_code_block(raw_solution)
+        task = task_edit.toPlainText().strip() or last_task["text"].strip()
+        suggested = infer_file_target(task) or "solution.py"
+        target_path, ok = QtWidgets.QInputDialog.getText(
+            root.window(),
+            "Apply Solution to File",
+            "Enter target file path (relative to workspace or absolute):",
+            QtWidgets.QLineEdit.EchoMode.Normal,
+            suggested,
+        )
+        if not ok or not target_path.strip():
+            return
+        target_path = target_path.strip()
+        try:
+            plan = state.plan_task(
+                f"Apply solution to {target_path}",
+                file_or_element=target_path,
+                diff_preview=solution,
+                operation="apply_change",
+            )
+            spec = state.propose_plan(plan)
+            res_ok, msg = state.authorize_and_execute(
+                spec.action_id,
+                checklist_ack=True,
+                executor=state.execute_action_plan,
+            )
+            status.showMessage(msg, 6000 if res_ok else 8000)
+            if res_ok:
+                state.prefs = state.prefs.record_task(
+                    f"Saved {target_path}",
+                    project_combo.currentText().strip(),
+                    "Completed",
+                )
+                try:
+                    state.prefs.save()
+                except OSError:
+                    pass
+                render_feed()
+        except Exception as exc:
+            status.showMessage(f"Apply failed: {exc}", 8000)
+
     def on_drive() -> None:
-        solution = last_solution["text"].strip()
+        raw_solution = last_solution["text"].strip()
+        if not raw_solution:
+            return
+        solution = extract_code_block(raw_solution)
         if not solution:
             return
+        from mimir.actions import ActionStatus
         from mimir.actuator import DesktopActuator
         from mimir.desktop import TargetSpec
         from ..actuate_worker import (
@@ -567,6 +649,7 @@ def build_replicate_tab(state: AppState, status: Any) -> Any:
                 return
         drive_btn.setEnabled(False)
         copy_btn.setEnabled(False)
+        apply_file_btn.setEnabled(False)
         dialog = QtWidgets.QDialog(root.window())
         dialog.setWindowTitle("Cobot drive")
         dialog.setModal(False)
@@ -631,6 +714,20 @@ def build_replicate_tab(state: AppState, status: Any) -> Any:
             target_combo.currentText() if target is not None else "")
         spec = None
         if registry is not None:
+            # Phase 3: reuse the proposal card's authorized entry
+            # when one is awaiting execution, so approval and the
+            # drive share one audit trail instead of minting a
+            # second action.
+            try:
+                existing_id = proposal.get("action_id") or ""
+                existing = (registry.get(existing_id)
+                            if existing_id else None)
+                if (existing is not None and existing.status
+                        is ActionStatus.AUTHORIZED):
+                    spec = existing
+            except Exception:
+                spec = None
+        if spec is None and registry is not None:
             try:
                 spec = registry.propose(
                     "drive_text",
@@ -671,6 +768,7 @@ def build_replicate_tab(state: AppState, status: Any) -> Any:
         def _release() -> None:
             drive_btn.setEnabled(True)
             copy_btn.setEnabled(True)
+            apply_file_btn.setEnabled(True)
             try:
                 _workers.remove(worker)
             except ValueError:
@@ -722,19 +820,27 @@ def build_replicate_tab(state: AppState, status: Any) -> Any:
             # bookkeeping race with the worker thread.
             if registry is not None and action_id:
                 try:
-                    outcome = registry.authorize(
-                        action_id,
-                        authorization_type="explicit_gui_confirmation",
-                        granted_permissions=("gui-confirm",),
-                    )
+                    current = registry.get(action_id)
+                    already = (current is not None and current.status
+                               is ActionStatus.AUTHORIZED)
                 except Exception:
-                    outcome = None
-                if outcome is None or not outcome.ok:
+                    already = False
+                if not already:
                     try:
-                        worker.cancel()
+                        from mimir.planning import GUI_GRANTED_PERMISSIONS
+                        outcome = registry.authorize(
+                            action_id,
+                            authorization_type="explicit_gui_confirmation",
+                            granted_permissions=GUI_GRANTED_PERMISSIONS,
+                        )
                     except Exception:
-                        pass
-                    return
+                        outcome = None
+                    if outcome is None or not outcome.ok:
+                        try:
+                            worker.cancel()
+                        except Exception:
+                            pass
+                        return
                 try:
                     registry.mark_executing(action_id)
                 except Exception:
@@ -927,12 +1033,142 @@ def build_replicate_tab(state: AppState, status: Any) -> Any:
             _mic_release(worker)
             status.showMessage(f"Microphone: {exc}", 8000)
 
+    def _clear_proposal() -> None:
+        while proposal_host.count():
+            old = proposal_host.takeAt(0).widget()
+            if old is not None:
+                old.deleteLater()
+        proposal.update(action_id="", plan=None, card=None)
+
+    def on_propose() -> None:
+        # Phase 3: typed plan (principles -> ActionPlan) rendered
+        # as an Action Proposal Card for graduated approval.
+        try:
+            task = (task_edit.toPlainText().strip()
+                    or last_task["text"].strip())
+            if not task:
+                status.showMessage("Describe a task first.", 4000)
+                return
+            scope = project_combo.currentText().strip() or None
+            inferred_file = infer_file_target(task)
+            solution_text = extract_code_block(last_solution.get("text", ""))
+            plan = state.plan_task(
+                task,
+                target_scope=scope,
+                file_or_element=inferred_file,
+                diff_preview=solution_text or None,
+            )
+            spec = state.propose_plan(plan)
+        except Exception as exc:
+            status.showMessage(f"Could not propose action: {exc}",
+                               8000)
+            return
+        _clear_proposal()
+        proposal["action_id"] = spec.action_id
+        proposal["plan"] = plan
+        try:
+            from .proposal_card import build_proposal_card
+            card_widget = build_proposal_card(
+                plan, action_id=spec.action_id,
+                on_authorize=on_proposal_authorize,
+                on_reject=on_proposal_reject,
+                on_modify=on_proposal_modify,
+            )
+        except Exception as exc:
+            status.showMessage(f"Could not render proposal: {exc}",
+                               8000)
+            return
+        proposal["card"] = card_widget
+        proposal_host.addWidget(card_widget)
+        risk = getattr(spec, "risk", "low") or "low"
+        status.showMessage(
+            f"Proposed {spec.action_id} ({risk} risk) — review and "
+            "authorize below.", 6000)
+
+    def on_proposal_authorize() -> None:
+        action_id = proposal.get("action_id") or ""
+        card_widget = proposal.get("card")
+        if not action_id:
+            return
+        try:
+            from .proposal_card import (proposal_checklist_ack,
+                                        set_proposal_busy)
+            ack = (proposal_checklist_ack(card_widget)
+                   if card_widget is not None else False)
+        except Exception:
+            ack = False
+        if card_widget is not None:
+            try:
+                set_proposal_busy(card_widget, True)
+            except Exception:
+                pass
+        spec = (state.action_registry.get(action_id)
+                if state.action_registry is not None else None)
+        has_effects = bool(
+            getattr(spec, "commands", ())
+            or (getattr(spec, "file_or_element", "")
+                and (getattr(spec, "diff_preview", "") or "").strip())
+        )
+        executor = state.execute_action_plan if has_effects else None
+        try:
+            ok, message = state.authorize_and_execute(
+                action_id, checklist_ack=ack,
+                executor=executor,
+            )
+        except Exception as exc:
+            ok, message = False, str(exc)
+        if card_widget is not None:
+            try:
+                set_proposal_busy(card_widget, False)
+            except Exception:
+                pass
+        status.showMessage(message, 8000 if not ok else 6000)
+        if ok and card_widget is not None:
+            # One approval per card: further clicks would only
+            # re-report the settled status.
+            try:
+                card_widget.authorize_btn.setEnabled(False)
+            except Exception:
+                pass
+
+    def on_proposal_reject() -> None:
+        action_id = proposal.get("action_id") or ""
+        if action_id:
+            try:
+                state.reject_proposal(action_id,
+                                      "rejected in Replicate tab")
+            except Exception:
+                pass
+        _clear_proposal()
+        status.showMessage("Proposal rejected.", 4000)
+
+    def on_proposal_modify() -> None:
+        plan = proposal.get("plan")
+        action_id = proposal.get("action_id") or ""
+        if action_id:
+            # Fail-closed: the stale pending entry dies so an
+            # approval can never bind to pre-edit wording.
+            try:
+                state.action_registry.cancel(
+                    action_id, "superseded by user modification")
+            except Exception:
+                pass
+        _clear_proposal()
+        if plan is not None:
+            task_edit.setPlainText(getattr(plan, "task", "") or "")
+        task_edit.setFocus()
+        status.showMessage(
+            "Loaded into the prompt — edit, then Generate or "
+            "Propose action.", 5000)
+
     conf_spin.valueChanged.connect(on_conf_changed)
     start_ollama_btn.clicked.connect(on_start_ollama)
     get_ollama_btn.clicked.connect(on_get_ollama)
     generate_btn.clicked.connect(on_generate)
     copy_btn.clicked.connect(on_copy)
+    apply_file_btn.clicked.connect(on_apply_file)
     drive_btn.clicked.connect(on_drive)
+    propose_btn.clicked.connect(on_propose)
     mic_btn.clicked.connect(on_mic)
     view_all.clicked.connect(
         lambda: (show_all.update(on=not show_all["on"]), render_feed()))

@@ -27,9 +27,23 @@ from mimir.voice_action import StructuredIntent, VoiceActionService
 
 from .prefs import DesktopPrefs
 
-__all__ = ["AppState", "DEFAULT_STORE_PATH", "get_llm_fn"]
+__all__ = ["AUTO_LLM", "AppState", "DEFAULT_STORE_PATH", "get_llm_fn"]
 
 DEFAULT_STORE_PATH = "mimir_memory.db"
+
+class _AutoLLM:
+    """Sentinel: resolve the learn-time LLM from user prefs (Phase 0)."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return "AUTO_LLM"
+
+
+#: Default ``llm_fn`` for :meth:`AppState.learn` — resolve via
+#: :func:`get_llm_fn` from the active prefs (offline prefs yield None,
+#: i.e. the deterministic :class:`mimir.detective.FallbackOfflineStub`).
+AUTO_LLM = _AutoLLM()
 
 #: Local-Llama structured intents -> legacy companion intent names.
 _LLAMA_TO_LEGACY = {
@@ -46,47 +60,26 @@ _LLAMA_TO_LEGACY = {
 def get_llm_fn(prefs: DesktopPrefs) -> Optional[Callable[[str], str]]:
     """Build a pluggable LLM completion function from user preferences.
 
-    Returns None when the provider is offline (or unknown), or when a
-    cloud provider is selected without an API key — the caller then
-    falls back to the offline heuristic scaffold.
+    Phase 2 delegates to the standardized :class:`desktop_app.llm.LLMProvider`
+    (Ollama/Llama-3.2 default, cloud bridges optional). Returns None
+    when the provider is offline (or unknown), or when a cloud provider
+    is selected without an API key — the caller then falls back to the
+    :class:`mimir.detective.FallbackOfflineStub` scaffold.
     """
-    from .llm import (
-        DEFAULT_GEMINI_MODEL,
-        DEFAULT_OLLAMA_ENDPOINT,
-        DEFAULT_OLLAMA_MODEL,
-        DEFAULT_OPENAI_MODEL,
-        build_gemini_client,
-        build_ollama_client,
-        build_openai_client,
-        normalize_provider,
-    )
+    from .llm import build_llm_client
 
-    provider = normalize_provider(
-        getattr(prefs, "model_provider", "offline") or "offline")
-    if provider == "offline":
+    try:
+        provider = getattr(prefs, "model_provider", "offline") or "offline"
+        model = getattr(prefs, "model_name", "") or ""
+        endpoint = getattr(prefs, "model_endpoint", "") or ""
+        api_key = getattr(prefs, "api_key", "") or ""
+    except Exception:
         return None
-    if provider == "ollama":
-        endpoint = (getattr(prefs, "model_endpoint", "") or "").strip()
-        model = (getattr(prefs, "model_name", "") or "").strip()
-        return build_ollama_client(
-            endpoint=endpoint or DEFAULT_OLLAMA_ENDPOINT,
-            model=model or DEFAULT_OLLAMA_MODEL,
-        )
-    api_key = (getattr(prefs, "api_key", "") or "").strip()
-    if not api_key:
-        return None
-    model = (getattr(prefs, "model_name", "") or "").strip()
-    if provider == "openai":
-        return build_openai_client(api_key=api_key,
-                                   model=model or DEFAULT_OPENAI_MODEL)
-    if provider == "gemini":
-        return build_gemini_client(api_key=api_key,
-                                   model=model or DEFAULT_GEMINI_MODEL)
-    if provider == "anthropic":
-        from .llm import DEFAULT_ANTHROPIC_MODEL, build_anthropic_client
-        return build_anthropic_client(
-            api_key=api_key, model=model or DEFAULT_ANTHROPIC_MODEL)
-    return None  # Graceful fallback to offline scaffold
+    try:
+        return build_llm_client(provider, model=model, endpoint=endpoint,
+                                api_key=api_key)
+    except Exception:
+        return None  # Graceful fallback to offline scaffold
 
 
 @dataclass
@@ -119,6 +112,7 @@ class AppState:
         default=None, repr=False)
     _sensory: Any = field(default=None, repr=False)
     _sensory_tokens: list[Any] = field(default_factory=list, repr=False)
+    _chunker: Any = field(default=None, repr=False)
     # Latest one-line activity insight while wandering ("Notices: ...").
     last_activity_note: str = ""
 
@@ -164,9 +158,17 @@ class AppState:
         if self._sensory is None:
             return None
         try:
-            return dict(self._sensory.status())
+            snapshot = dict(self._sensory.status())
         except Exception:
             return None
+        try:
+            snapshot["chunk_pending"] = (
+                int(self._chunker.pending_count)
+                if self._chunker is not None else 0
+            )
+        except Exception:
+            snapshot["chunk_pending"] = 0
+        return snapshot
 
     def start_senses(
         self,
@@ -179,12 +181,20 @@ class AppState:
         Monitors workspace roots, computes 300ms-debounced AST deltas, streams
         structural changes to the Detective engine (Phase 4.2), and binds
         the Visor to the event bus for reactive micro-animations (Phase 4.3).
+
+        Phase 1 ambient pipeline: the daemon runs allowlist-only behind a
+        :class:`~mimir.privacy.PrivacyGate` (forbidden secret files are
+        never published, payloads are redacted pre-publish), and file
+        saves are grouped into episodes by an
+        :class:`~mimir.chunking.EpisodicChunkingEngine`.
         """
         self.stop_senses()
         try:
             from pathlib import Path
             from mimir.ast_delta import ast_delta_to_episode
+            from mimir.chunking import EpisodicChunkingEngine
             from mimir.events import Event, bind_visor_to_bus, get_event_bus
+            from mimir.privacy import PrivacyGate
             from mimir.sensory import SensoryService
         except ImportError:
             return False
@@ -195,7 +205,12 @@ class AppState:
         target_repo = repo or self.prefs.last_repo or ""
         if target_repo and target_repo not in effective_roots:
             effective_roots.append(target_repo)
-        live = [r for r in effective_roots if Path(r).is_dir()]
+        try:
+            gate = PrivacyGate(effective_roots)
+        except ValueError:
+            return False
+        live = [r for r in effective_roots
+                if Path(r).is_dir() and gate.is_within_allowlist(r)]
         if not live:
             return False
 
@@ -208,11 +223,14 @@ class AppState:
                 bus=bus,
                 session_id=self.session_id,
                 debounce_s=debounce_s,
+                privacy_gate=gate,
             )
             service.start()
         except Exception:
             return False
         self._sensory = service
+        self._chunker = EpisodicChunkingEngine(
+            repo=target_repo or "local", privacy_gate=gate)
 
         tokens: list[Any] = []
         try:
@@ -249,8 +267,55 @@ class AppState:
         except Exception:
             pass
 
+        # Group file-save micro-actions into burst episodes (Phase 1).
+        chunker = self._chunker
+
+        def _on_save_burst(event: Event) -> None:
+            try:
+                episode = chunker.observe_event(event)
+            except Exception:
+                episode = None
+            if episode is not None:
+                seen = {e.id for e in self.episodes}
+                if episode.id not in seen:
+                    self.episodes.insert(0, episode)
+
+        try:
+            tokens.append(
+                bus.subscribe(
+                    EventType.FILE_CREATED,
+                    EventType.FILE_MODIFIED,
+                    EventType.FILE_DELETED,
+                    _on_save_burst,
+                    name="state:chunk_saves",
+                )
+            )
+        except Exception:
+            pass
+
         self._sensory_tokens = tokens
         return True
+
+    def flush_episode_chunk(self) -> Optional[Any]:
+        """Close the open save-burst as one episode (None when empty).
+
+        The chunker buffers file-save micro-actions while senses run;
+        flushing groups them into a single ``BehavioralEpisode`` and
+        prepends it to the episode cache for Detective inference.
+        """
+        chunker = self._chunker
+        if chunker is None:
+            return None
+        try:
+            episode = chunker.flush()
+        except Exception:
+            return None
+        if episode is None:
+            return None
+        seen = {e.id for e in self.episodes}
+        if episode.id not in seen:
+            self.episodes.insert(0, episode)
+        return episode
 
     def stop_senses(self) -> None:
         """Stop background senses daemon and unbind tokens (idempotent)."""
@@ -258,6 +323,12 @@ class AppState:
         if service is not None:
             try:
                 service.stop()
+            except Exception:
+                pass
+        chunker, self._chunker = self._chunker, None
+        if chunker is not None:
+            try:
+                chunker.reset()
             except Exception:
                 pass
         tokens, self._sensory_tokens = self._sensory_tokens, []
@@ -299,14 +370,33 @@ class AppState:
         self,
         episodes: Optional[Sequence[BehavioralEpisode]] = None,
         min_cluster_size: int = 1,
+        llm_fn: Any = AUTO_LLM,
     ) -> list[BehavioralPrinciple]:
-        """Cluster episodes, infer principles, persist them to the store."""
+        """Cluster episodes, infer principles, persist them to the store.
+
+        ``llm_fn`` defaults to :data:`AUTO_LLM`, which resolves the
+        active provider from prefs (local Ollama / Llama 3.2 when the
+        startup probe enabled it, else the
+        :class:`~mimir.detective.FallbackOfflineStub`). Pass an
+        explicit callable to force live inference, or None to force the
+        offline stub. Auto-resolved LLM failures (daemon stopped, bad
+        output) fail closed to the offline stub; an explicit
+        callable's errors propagate to the caller.
+        """
         self.visor.set_state(VisorState.THINKING)
         try:
             used = (list(episodes) if episodes is not None
                     else list(self.episodes))
-            principles = infer_principles(
-                used, min_cluster_size=min_cluster_size)
+            auto = llm_fn is AUTO_LLM
+            fn = get_llm_fn(self.prefs) if auto else llm_fn
+            try:
+                principles = infer_principles(
+                    used, min_cluster_size=min_cluster_size, llm_fn=fn)
+            except Exception:
+                if not auto or fn is None:
+                    raise
+                principles = infer_principles(
+                    used, min_cluster_size=min_cluster_size)
             return self.commit_principles(
                 principles, [e.id for e in used])
         finally:
@@ -348,6 +438,72 @@ class AppState:
     def adjust_confidence(self, principle_id: str, delta: float,
                           evidence_id: str) -> None:
         self.store.update_confidence(principle_id, delta, evidence_id)
+
+    def get_principle(self, principle_id: str) -> BehavioralPrinciple:
+        """Fetch one principle by id (Review & Calibration Deck).
+
+        Raises :class:`mimir.store.PrincipleNotFoundError` when absent.
+        """
+        return self.store.get(principle_id)
+
+    def set_confidence(self, principle_id: str, value: float,
+                       evidence_id: str) -> BehavioralPrinciple:
+        """Set absolute confidence (deck slider) and return the refresh.
+
+        ``value`` must lie within [0, 1]; the evidence id appends to the
+        principle's inspectable traces. Unlike :meth:`adjust_confidence`
+        (Bayesian evidence), this is a direct human calibration: the
+        supporting/contradiction counts stay untouched.
+        """
+        self.store.set_confidence(principle_id, value, evidence_id)
+        return self.store.get(principle_id)
+
+    def update_principle(
+        self,
+        principle_id: str,
+        *,
+        name: Optional[str] = None,
+        category: Optional[str] = None,
+        scope: Optional[str] = None,
+        language_agnostic: Optional[bool] = None,
+        latent_invariant: Optional[str] = None,
+        anti_patterns: Optional[Sequence[str]] = None,
+    ) -> BehavioralPrinciple:
+        """Edit a principle's human-readable fields (deck editor).
+
+        Only the provided fields change; the id, epistemic status, and
+        inspectable traces (episode linkage) are preserved. Saving
+        re-embeds the principle so retrieval follows the new wording.
+        Raises :class:`mimir.store.PrincipleNotFoundError` when absent
+        and :class:`ValueError` when a new value violates the contract.
+        """
+        from mimir.principles import BehavioralPrinciple, ContextTrigger
+
+        current = self.store.get(principle_id)
+        trigger = current.context_trigger
+        if scope is not None or language_agnostic is not None:
+            trigger = ContextTrigger(
+                scope=current.context_trigger.scope if scope is None else scope,
+                language_agnostic=(
+                    current.context_trigger.language_agnostic
+                    if language_agnostic is None else language_agnostic
+                ),
+            )
+        updated = BehavioralPrinciple(
+            id=current.id,
+            name=current.name if name is None else name,
+            category=current.category if category is None else category,
+            context_trigger=trigger,
+            latent_invariant=(current.latent_invariant
+                              if latent_invariant is None
+                              else latent_invariant),
+            anti_patterns=(current.anti_patterns
+                           if anti_patterns is None else anti_patterns),
+            epistemic_status=current.epistemic_status,
+            inspectable_traces=current.inspectable_traces,
+        )
+        self.store.save(updated)
+        return updated
 
     def delete_principle(self, principle_id: str) -> bool:
         return self.store.delete(principle_id)
@@ -675,11 +831,27 @@ class AppState:
         Replies reuse the legacy companion mapping below, so hosted
         flows (Home mic, CLI cobot) keep their exact wording while
         approvals resolve against the shared action registry and the
-        shared safety controller. Extra keyword arguments pass through
-        to :class:`VoiceActionService` (``speak_fn``, ``speak_async``,
+        shared safety controller. Phase 5 text parity: ``plan_fn`` /
+        ``propose_fn`` default to :meth:`plan_task` / :meth:`propose_plan`
+        (the same planner + registry a typed Replicate proposal uses)
+        and ``forbid_fn`` defaults to
+        :meth:`register_negative_invariant`, so voice intents flow
+        through the identical auth/planning pipeline as text. Pass
+        explicit ``plan_fn=None`` (and ``propose_fn=None`` /
+        ``forbid_fn=None``) to restore the legacy reply-only behavior.
+        Extra keyword arguments pass through to
+        :class:`VoiceActionService` (``speak_fn``, ``speak_async``,
         ``devstate``, ...).
         """
         assert self.action_registry is not None  # built in __post_init__
+        # Note: kwargs.setdefault cannot express "default, but None
+        # disables" for callers that pass plan_fn=None explicitly to
+        # opt out — setdefault keeps the explicit None, which the
+        # service treats as unbound. Planner callbacks run on the
+        # caller's thread and fail closed to the spoken reply.
+        kwargs.setdefault("plan_fn", self.plan_task)
+        kwargs.setdefault("propose_fn", self.propose_plan)
+        kwargs.setdefault("forbid_fn", self.register_negative_invariant)
         return VoiceActionService(
             coordinator if coordinator is not None else self.voice,
             self.action_registry,
@@ -688,6 +860,33 @@ class AppState:
             safety=self.safety,
             reply_fn=self._service_reply,
             **kwargs,
+        )
+
+    def handle_voice_transcript(
+        self,
+        text: str,
+        coordinator: Optional[VoiceCoordinator] = None,
+        correlation_id: str = "",
+        now: Optional[float] = None,
+        **service_kwargs: Any,
+    ) -> Any:
+        """Handle one voice transcript through the text auth pipeline.
+
+        Builds :meth:`voice_service` (shared registry, shared safety,
+        same planner as typed Replicate proposals) and handles
+        ``text`` end to end: parse → resolve → authorize/propose →
+        publish → speak. Returns the :class:`VoiceDecision` (reply is
+        the TTS feedback; ``proposed_action_id`` names the new
+        proposal for ``PUSH_CODE``). Planner failures fail closed to
+        the legacy spoken reply — this never raises for backend
+        reasons (only for invalid ``text``).
+        """
+        service = self.voice_service(
+            coordinator if coordinator is not None else self.voice,
+            **service_kwargs,
+        )
+        return service.handle_transcript(
+            text, correlation_id=correlation_id, now=now,
         )
 
     def _service_reply(self, structured: StructuredIntent) -> str:
@@ -872,6 +1071,7 @@ class AppState:
             file_or_element=str(target_dir),
             reason=f"Push branch '{branch}' to '{remote}' safely after verifying repository state and invariants.",
             required_permissions=("git_push", "workspace_write"),
+            risk="high",
         )
 
         return {
@@ -900,10 +1100,26 @@ class AppState:
         if spec is None:
             return False, f"Action '{action_id}' not found in registry."
 
-        try:
-            self.action_registry.mark_executing(action_id)
-        except Exception:
-            pass
+        # Zero execution without approval (Phase 3): a push runs only
+        # from AUTHORIZED (fresh approval) or EXECUTING (retry after a
+        # worker restart). Anything else — pending, expired, denied —
+        # refuses before any subprocess is spawned.
+        if spec.status is ActionStatus.AUTHORIZED:
+            try:
+                started = self.action_registry.mark_executing(action_id)
+            except Exception:
+                started = False
+            if not started:
+                return False, (
+                    "Cannot execute: action was invalidated by a "
+                    "safety stop."
+                )
+        elif spec.status is not ActionStatus.EXECUTING:
+            return False, (
+                f"Cannot execute: action '{action_id}' is not "
+                f"authorized (status={spec.status.value}). Approve it "
+                "first."
+            )
 
         target_dir = repo_dir or spec.file_or_element or str(Path.cwd().resolve())
 
@@ -931,6 +1147,318 @@ class AppState:
         except Exception as exc:
             self.action_registry.fail(action_id, reason=str(exc))
             return False, str(exc)
+
+    # -- Phase 3: typed planning + graduated autonomy -------------------
+    def plan_task(self, task: str, **kwargs: Any) -> Any:
+        """Draft a typed, risk-scored ActionPlan for ``task`` (no effects).
+
+        Retrieves the user's relevant principles from the store and
+        scores the plan LOW / MEDIUM / HIGH. Extra keyword arguments
+        pass through to :meth:`mimir.planning.ActionPlanner.plan`
+        (``operation``, ``target``, ``file_or_element``,
+        ``target_scope``, ``min_confidence``, ``top_k``, ...).
+        """
+        from mimir.planning import ActionPlanner
+
+        try:
+            roots = list(self.prefs.last_roots) or self.default_roots()
+        except Exception:
+            roots = []
+        planner = ActionPlanner(self.store, allowed_roots=roots)
+        return planner.plan(task, **kwargs)
+
+    def propose_plan(self, plan: Any, **kwargs: Any) -> Any:
+        """Record an ActionPlan in the shared registry (PENDING).
+
+        Emits ``ACTION_PROPOSED`` with the plan's risk tier, commands,
+        and matched principles. Extra keyword arguments pass through
+        to the registry (``ttl_s``, ``action_id``, ...).
+        """
+        from mimir.planning import ActionPlanner
+
+        assert self.action_registry is not None  # built in __post_init__
+        kwargs.setdefault("session_id", self.session_id)
+        return ActionPlanner.propose(plan, self.action_registry, **kwargs)
+
+    def authorize_proposal(
+        self,
+        action_id: str,
+        *,
+        checklist_ack: bool = False,
+        authorization_type: str = "explicit_gui_confirmation",
+    ) -> Any:
+        """Authorize one proposal via the GUI gesture (graduated).
+
+        LOW plans authorize with a single click; MEDIUM/HIGH plans
+        additionally require ``checklist_ack`` (every safety-checklist
+        box confirmed on the proposal card). The GUI grants the
+        risk-appropriate permission; voice approvals keep flowing
+        through the registry with voice-only grants and stay confined
+        to low-risk work.
+        """
+        from mimir.actions import AuthorizationOutcome
+        from mimir.planning import GUI_GRANTED_PERMISSIONS
+
+        assert self.action_registry is not None  # built in __post_init__
+        spec = self.action_registry.get(action_id)
+        if spec is None:
+            return AuthorizationOutcome(
+                False, f"unknown action {action_id!r}",
+                action_id=action_id,
+            )
+        risk = (getattr(spec, "risk", "low") or "low").strip().lower()
+        if risk in ("medium", "high") and not checklist_ack:
+            return AuthorizationOutcome(
+                False,
+                f"action {spec.action_id!r} needs safety-checklist "
+                f"confirmation first (risk={risk})",
+                action_id=spec.action_id,
+                status=spec.status,
+            )
+        return self.action_registry.authorize(
+            action_id,
+            authorization_type=authorization_type,
+            granted_permissions=GUI_GRANTED_PERMISSIONS,
+        )
+
+    def reject_proposal(
+        self, action_id: str, reason: str = "rejected by user"
+    ) -> bool:
+        """Reject one proposal (PENDING -> CANCELLED). Never raises."""
+        assert self.action_registry is not None  # built in __post_init__
+        try:
+            return self.action_registry.cancel(action_id, reason=reason)
+        except Exception:
+            return False
+
+    def authorize_and_execute(
+        self,
+        action_id: str,
+        *,
+        checklist_ack: bool = False,
+        executor: Any = None,
+    ) -> tuple[bool, str]:
+        """Authorize one proposal and execute it (fail-closed).
+
+        Zero execution without approval: PENDING medium/high plans
+        refuse unless ``checklist_ack`` confirms the safety checklist,
+        and nothing runs while the safety E-stop is latched or the
+        entry is not AUTHORIZED. ``executor`` (``spec ->
+        (ok, message)``) performs the side effects; without one,
+        read-only low-risk plans complete immediately while anything
+        with commands or file effects stays AUTHORIZED with a
+        "no executor bound" note so a linked runner (drive dialog,
+        git push) can carry it out on the same registry entry.
+        """
+        from mimir.actions import ActionStatus
+
+        assert self.action_registry is not None  # built in __post_init__
+        try:
+            spec = self.action_registry.get(action_id)
+        except Exception as exc:
+            return (False, str(exc))
+        if spec is None:
+            return (False, f"Unknown action {action_id!r}.")
+        if self.safety is not None:
+            try:
+                latched = self.safety.estopped
+            except Exception:
+                latched = False
+            if latched:
+                return (False, "Safety stop is active — reauthorize "
+                               "before executing.")
+        if spec.status is ActionStatus.AUTHORIZED:
+            pass  # approved earlier (e.g. proposal card, then runner)
+        elif spec.status is ActionStatus.PENDING:
+            outcome = self.authorize_proposal(
+                action_id, checklist_ack=checklist_ack)
+            if not outcome.ok:
+                return (False, outcome.reason)
+            spec = self.action_registry.get(action_id)
+            assert spec is not None  # just authorized above
+        else:
+            return (False, f"Action '{action_id}' is already "
+                           f"{spec.status.value}; nothing to execute.")
+        self._emit(EventType.ACTION_REQUESTED, "cognitive.action_planner",
+                   spec.to_dict())
+        risk = (getattr(spec, "risk", "low") or "low").strip().lower()
+        if executor is None:
+            if (risk == "low" and not getattr(spec, "commands", ())
+                    and not (getattr(spec, "diff_preview", "") or "")):
+                try:
+                    self.action_registry.mark_executing(action_id)
+                except Exception:
+                    pass
+                self.action_registry.complete(action_id)
+                return (True, "Authorized and completed (read-only — "
+                              "no side effects).")
+            return (True, f"Authorized {action_id} ({risk} risk); "
+                          "execution deferred — no executor bound for "
+                          f"{spec.operation}.")
+        try:
+            started = self.action_registry.mark_executing(action_id)
+        except Exception:
+            started = False
+        if not started:
+            return (False, "Could not start execution: the action was "
+                           "invalidated by a safety stop.")
+        try:
+            result = executor(spec)
+            ok = bool(result[0])
+            message = str(result[1]) if len(result) > 1 else ""
+        except Exception as exc:
+            self.action_registry.fail(action_id, reason=str(exc))
+            return (False, f"Execution failed: {exc}")
+        if ok:
+            self.action_registry.complete(action_id)
+            return (True, message or "Executed successfully.")
+        self.action_registry.fail(action_id, reason=message)
+        return (False, message or "Execution failed.")
+
+    def execute_action_plan(self, spec: Any) -> tuple[bool, str]:
+        """Execute the side effects of an authorized ActionSpec.
+
+        Handles:
+        1. Executing shell commands in the project workspace (e.g. pytest, npm test).
+        2. Applying code changes or new files into the project workspace safely.
+        3. Git workflow actions (git status, commit, push).
+        """
+        from .presenters import extract_code_block
+
+        if self.safety is not None:
+            try:
+                latched = self.safety.estopped
+            except Exception:
+                latched = False
+            if latched:
+                return (False, "Safety stop is active — execution blocked.")
+
+        op = getattr(spec, "operation", "") or ""
+        commands = list(getattr(spec, "commands", ()) or ())
+        target_file = (
+            getattr(spec, "file_or_element", "") or getattr(spec, "target", "")
+        ).strip()
+        diff_or_code = getattr(spec, "diff_preview", "") or ""
+
+        # Determine working directory
+        cwd = Path.cwd().resolve()
+        if self.prefs.last_repo:
+            try:
+                repo_path = Path(self.prefs.last_repo).resolve()
+                if repo_path.is_dir():
+                    cwd = repo_path
+            except Exception:
+                pass
+
+        results: list[str] = []
+
+        # 1. File write/edit if target_file and code payload are present
+        if target_file and diff_or_code and not diff_or_code.startswith("@@ planned change"):
+            try:
+                dest = Path(target_file)
+                if not dest.is_absolute():
+                    dest = (cwd / dest).resolve()
+
+                # Verify within allowed roots if configured
+                allowed = [
+                    Path(r).resolve()
+                    for r in (self.prefs.last_roots or self.default_roots())
+                ]
+                is_allowed = not allowed or any(
+                    dest == root or root in dest.parents for root in allowed
+                )
+                if not is_allowed:
+                    return (
+                        False,
+                        f"Target path '{dest}' is outside allowed workspace roots.",
+                    )
+
+                code_to_write = extract_code_block(diff_or_code)
+                if code_to_write:
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_text(code_to_write, encoding="utf-8")
+                    line_count = len(code_to_write.splitlines())
+                    results.append(
+                        f"Wrote {line_count} line(s) to '{dest.name}'"
+                    )
+            except Exception as exc:
+                return (False, f"Failed writing to '{target_file}': {exc}")
+
+        # 2. Run commands if specified
+        if commands:
+            for cmd in commands:
+                try:
+                    import subprocess
+
+                    proc = subprocess.run(
+                        cmd,
+                        cwd=str(cwd),
+                        shell=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=120,
+                    )
+                    out = (
+                        proc.stdout
+                        + ("\n" + proc.stderr if proc.stderr else "")
+                    ).strip()
+                    if proc.returncode != 0:
+                        return (
+                            False,
+                            f"Command '{cmd}' failed (exit {proc.returncode}):\n{out or 'No output'}",
+                        )
+                    first_line = out.splitlines()[0] if out else "OK"
+                    results.append(f"$ {cmd} -> {first_line}")
+                except subprocess.TimeoutExpired:
+                    return (False, f"Command '{cmd}' timed out after 120s.")
+                except Exception as exc:
+                    return (False, f"Command '{cmd}' failed: {exc}")
+
+        # 3. Handle git_push if no explicit commands were set
+        if op in ("git_push", "push") and not commands:
+            try:
+                import subprocess
+
+                subprocess.run(
+                    "git status --porcelain",
+                    cwd=str(cwd),
+                    shell=True,
+                    check=True,
+                    capture_output=True,
+                )
+                push_res = subprocess.run(
+                    "git push",
+                    cwd=str(cwd),
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                if push_res.returncode != 0:
+                    return (
+                        False,
+                        f"git push failed: {push_res.stderr or push_res.stdout}",
+                    )
+                results.append("Git push completed successfully.")
+            except Exception as exc:
+                return (False, f"Git push failed: {exc}")
+
+        if not results:
+            results.append(
+                f"Completed {op or 'action'} successfully (no file or command side effects)."
+            )
+
+        summary = " | ".join(results)
+        self._emit(
+            EventType.ACTION_COMPLETED,
+            "desktop_app.state",
+            {
+                "action_id": getattr(spec, "action_id", ""),
+                "operation": op,
+                "summary": summary,
+            },
+        )
+        return (True, summary)
 
     def _legacy_reply(self, intent: str, text: str) -> str:
         """Companion wording for a parsed intent (no side effects)."""

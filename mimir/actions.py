@@ -100,6 +100,14 @@ class ActionSpec:
     created_at: float = field(default_factory=time.time)
     correlation_id: str = ""
     session_id: str = ""
+    # Phase 3 typed-planning metadata (defaults keep every pre-Phase-3
+    # caller valid: untyped proposals read as low-risk with no plan).
+    risk: str = "low"
+    plan_id: str = ""
+    commands: tuple[str, ...] = ()
+    diff_preview: str = ""
+    matched_principle_ids: tuple[str, ...] = ()
+    safety_checklist: tuple[str, ...] = ()
 
     def is_expired(self, now: Optional[float] = None) -> bool:
         if self.expires_at is None:
@@ -124,6 +132,12 @@ class ActionSpec:
             "created_at": self.created_at,
             "correlation_id": self.correlation_id,
             "session_id": self.session_id,
+            "risk": self.risk,
+            "plan_id": self.plan_id,
+            "commands": list(self.commands),
+            "diff_preview": self.diff_preview,
+            "matched_principle_ids": list(self.matched_principle_ids),
+            "safety_checklist": list(self.safety_checklist),
         }
 
 
@@ -239,10 +253,24 @@ class ActionRegistry:
         correlation_id: str = "",
         session_id: Optional[str] = None,
         now: Optional[float] = None,
+        risk: str = "low",
+        plan_id: str = "",
+        commands: Collection[str] = (),
+        diff_preview: str = "",
+        matched_principle_ids: Collection[str] = (),
+        safety_checklist: Collection[str] = (),
     ) -> ActionSpec:
         """Record a new pending action; emits ``ACTION_PROPOSED``."""
         if not isinstance(operation, str) or not operation.strip():
             raise RegistryError("operation: expected a non-empty string")
+        risk_value = (
+            risk.strip().lower() if isinstance(risk, str) else ""
+        )
+        if risk_value not in ("low", "medium", "high"):
+            raise RegistryError(
+                "risk: expected one of low/medium/high, "
+                f"got {risk!r}"
+            )
         if not isinstance(confidence, (int, float)) or isinstance(
             confidence, bool
         ):
@@ -268,6 +296,12 @@ class ActionRegistry:
                     f"ttl_s: expected a positive number, got {ttl!r}"
                 )
             expires_at = moment + float(ttl)
+        if isinstance(commands, str):
+            commands = (commands,)
+        if isinstance(matched_principle_ids, str):
+            matched_principle_ids = (matched_principle_ids,)
+        if isinstance(safety_checklist, str):
+            safety_checklist = (safety_checklist,)
         spec = ActionSpec(
             action_id=(
                 action_id.strip()
@@ -294,6 +328,16 @@ class ActionRegistry:
             session_id=(
                 self.session_id if session_id is None else session_id
             ),
+            risk=risk_value,
+            plan_id=plan_id.strip() if isinstance(plan_id, str) else "",
+            commands=tuple(str(c) for c in commands),
+            diff_preview=(
+                diff_preview if isinstance(diff_preview, str) else ""
+            ),
+            matched_principle_ids=tuple(
+                str(p) for p in matched_principle_ids
+            ),
+            safety_checklist=tuple(str(c) for c in safety_checklist),
         )
         stamp = self.safety.generation if self.safety is not None else 0
         with self._lock:
@@ -307,6 +351,10 @@ class ActionRegistry:
             "confidence": spec.confidence,
             "required_permissions": list(spec.required_permissions),
             "expires_at": spec.expires_at,
+            "risk": spec.risk,
+            "plan_id": spec.plan_id,
+            "commands": list(spec.commands),
+            "matched_principle_ids": list(spec.matched_principle_ids),
         })
         return spec
 

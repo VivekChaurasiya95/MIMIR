@@ -81,21 +81,21 @@ def sync_tray(window: Any, show_in_tray: bool) -> Any | None:
     try:
         tray = QtWidgets.QSystemTrayIcon(window)
         tray.setIcon(_tray_icon())
-        tray.setToolTip("Habitous — Intelligent Developer Companion")
+        tray.setToolTip("MIMIR — Intelligent Developer Companion")
         menu = QtWidgets.QMenu()
-        toggle_action = menu.addAction("Show Habitous")
-        quit_action = menu.addAction("Quit Habitous")
+        toggle_action = menu.addAction("Show MIMIR")
+        quit_action = menu.addAction("Quit MIMIR")
 
         def _toggle() -> None:
             try:
                 if window.isVisible():
                     window.hide()
-                    toggle_action.setText("Show Habitous")
+                    toggle_action.setText("Show MIMIR")
                 else:
                     window.show()
                     window.raise_()
                     window.activateWindow()
-                    toggle_action.setText("Hide Habitous")
+                    toggle_action.setText("Hide MIMIR")
             except Exception:
                 pass
 

@@ -21,9 +21,22 @@ Components:
   ``ACTION_REQUESTED``, authorizes through the registry, and speaks the
   reply through the existing TTS subsystem.
 
+Phase 5 routes voice through the same auth/planning pipeline as typed
+text: with ``plan_fn``/``propose_fn`` bound (see
+:meth:`AppState.voice_service` in the desktop state), a ``PUSH_CODE``
+utterance drafts an :class:`~mimir.planning.ActionPlan` and proposes
+it on the shared registry — the same ``ACTION_PROPOSED`` entry a
+typed Replicate proposal creates — so the follow-up "go ahead"
+authorizes one identical entry through the same graduated-autonomy
+permissions. ``FORBID`` utterances optionally persist through
+``forbid_fn`` (negative invariants); every planner callback fails
+closed to the legacy spoken reply.
+
 Everything here is Qt-free and independent of the desktop UI state: the
 service works headless with injected fakes, and the Qt
-``ListenWorker``/``SpeakWorker`` remain thin thread wrappers hosts may
+``ListenWorker``/``SpeakWorker`` (plus the Phase-5 split workers
+``AudioCaptureWorker``/``WhisperTranscribeWorker``/
+``SpeechSynthesisWorker``) remain thin thread wrappers hosts may
 keep using.
 """
 
@@ -51,7 +64,13 @@ from .voice import VoiceCoordinator
 
 __all__ = [
     "STRUCTURED_INTENTS",
+    "ForbidFn",
+    "PlanFn",
+    "ProposeFn",
+    "ReplyFn",
+    "SpeakFn",
     "StructuredIntent",
+    "TranscribeFn",
     "TranscriptionWorker",
     "VoiceActionError",
     "VoiceActionService",
@@ -85,6 +104,12 @@ _ACTION_ID_RE = re.compile(r"\baction_[A-Za-z0-9_-]{1,32}\b")
 TranscribeFn = Callable[[Any], Optional[str]]
 ReplyFn = Callable[["StructuredIntent"], str]
 SpeakFn = Callable[[str], None]
+#: Draft a typed plan for one utterance (Phase 5 text-parity hook).
+PlanFn = Callable[[str], Any]
+#: Record a drafted plan on the shared registry (returns its spec).
+ProposeFn = Callable[[Any], Any]
+#: Persist a spoken FORBID rule as a negative invariant.
+ForbidFn = Callable[[str], Any]
 
 
 class VoiceActionError(ValueError):
@@ -500,13 +525,20 @@ class TranscriptionWorker:
 
 @dataclass(frozen=True)
 class VoiceDecision:
-    """Outcome of handling one transcript (reply is the TTS feedback)."""
+    """Outcome of handling one transcript (reply is the TTS feedback).
+
+    ``proposed_action_id`` carries the Phase-5 text-parity proposal:
+    when a ``PUSH_CODE`` utterance drafts and proposes a plan through
+    the shared registry, the new entry's id lands here (the follow-up
+    "go ahead" authorizes it via ``authorized_action_id``).
+    """
 
     structured_intent: StructuredIntent
     reply: str
     authorized_action_id: str = ""
     authorization: Optional[AuthorizationOutcome] = None
     speak_error: str = ""
+    proposed_action_id: str = ""
 
 
 def _default_reply(intent: StructuredIntent) -> str:
@@ -542,6 +574,15 @@ class VoiceActionService:
     With a safety controller attached, a STOP intent latches the E-stop
     and approvals are denied while it is latched (voice is a trip
     source; the controller itself never depends on voice).
+
+    Phase 5 text parity: with ``plan_fn`` + ``propose_fn`` bound, a
+    ``PUSH_CODE`` utterance drafts and proposes through the same
+    planner + registry a typed Replicate proposal uses (same
+    ``ACTION_PROPOSED`` entry, same graduated-autonomy permissions on
+    the follow-up approval). With ``forbid_fn`` bound, ``FORBID``
+    utterances persist as negative invariants. Planner callbacks
+    always fail closed to the spoken reply — they never raise into
+    the caller.
     """
 
     def __init__(
@@ -558,6 +599,9 @@ class VoiceActionService:
         granted_permissions: Collection[str] = VOICE_GRANTED_PERMISSIONS,
         speak_async: bool = True,
         safety: Optional[SafetyController] = None,
+        plan_fn: Optional[PlanFn] = None,
+        propose_fn: Optional[ProposeFn] = None,
+        forbid_fn: Optional[ForbidFn] = None,
     ) -> None:
         if not isinstance(coordinator, VoiceCoordinator):
             raise VoiceActionError(
@@ -578,6 +622,12 @@ class VoiceActionService:
                 "safety: expected SafetyController or None, "
                 f"got {type(safety).__name__}"
             )
+        if plan_fn is not None and not callable(plan_fn):
+            raise VoiceActionError("plan_fn: expected a callable")
+        if propose_fn is not None and not callable(propose_fn):
+            raise VoiceActionError("propose_fn: expected a callable")
+        if forbid_fn is not None and not callable(forbid_fn):
+            raise VoiceActionError("forbid_fn: expected a callable")
         self.coordinator = coordinator
         self.registry = registry
         self.bus = bus
@@ -589,6 +639,9 @@ class VoiceActionService:
         self._speak_fn = speak_fn
         self.granted_permissions = tuple(granted_permissions)
         self.speak_async = speak_async
+        self._plan_fn = plan_fn
+        self._propose_fn = propose_fn
+        self._forbid_fn = forbid_fn
 
     # -- orchestration --------------------------------------------------
     def handle_transcript(
@@ -614,6 +667,7 @@ class VoiceActionService:
         reply: str
         authorized_id = ""
         authorization: Optional[AuthorizationOutcome] = None
+        proposed_id = ""
         if structured.intent == APPROVE_PENDING_ACTION:
             reply, authorized_id, authorization = self._handle_approval(
                 structured, correlation_id=correlation_id, now=now
@@ -629,13 +683,26 @@ class VoiceActionService:
                     )
                 except Exception:
                     pass  # trip never raises; stay fail-safe regardless
-            reply_fn = self._reply_fn or _default_reply
-            try:
-                reply = reply_fn(structured)
-            except Exception:
-                reply = _default_reply(structured)
-            if not isinstance(reply, str) or not reply.strip():
-                reply = _default_reply(structured)
+            if structured.intent == "FORBID" and self._forbid_fn is not None:
+                try:
+                    self._forbid_fn(structured.text.strip())
+                except Exception:
+                    pass  # persistence never blocks the spoken reply
+            planned: Optional[tuple[str, str]] = None
+            if (structured.intent == "PUSH_CODE"
+                    and self._plan_fn is not None
+                    and self._propose_fn is not None):
+                planned = self._handle_planned_push(structured)
+            if planned is not None:
+                proposed_id, reply = planned
+            else:
+                reply_fn = self._reply_fn or _default_reply
+                try:
+                    reply = reply_fn(structured)
+                except Exception:
+                    reply = _default_reply(structured)
+                if not isinstance(reply, str) or not reply.strip():
+                    reply = _default_reply(structured)
         speak_error = self._speak(reply)
         return VoiceDecision(
             structured_intent=structured,
@@ -643,6 +710,7 @@ class VoiceActionService:
             authorized_action_id=authorized_id,
             authorization=authorization,
             speak_error=speak_error,
+            proposed_action_id=proposed_id,
         )
 
     def handle_audio(
@@ -688,6 +756,50 @@ class VoiceActionService:
                 reply=reply,
             )
         return self.handle_transcript(text, correlation_id=correlation_id)
+
+    # -- text-parity planning ---------------------------------------------
+    def _handle_planned_push(
+        self, structured: StructuredIntent
+    ) -> Optional[tuple[str, str]]:
+        """Draft + propose a push plan; None to fall back (never raises).
+
+        Returns ``(action_id, reply)`` on success. The proposal lands
+        on the shared registry through ``propose_fn`` — the same
+        ``ACTION_PROPOSED`` entry a typed Replicate proposal creates —
+        so graduated autonomy applies identically: the follow-up
+        voice "go ahead" authorizes low-risk pushes and fails closed
+        on medium/high (which need the GUI checklist gesture).
+        """
+        assert self._plan_fn is not None and self._propose_fn is not None
+        try:
+            plan = self._plan_fn(structured.text.strip())
+        except Exception:
+            return None
+        try:
+            spec = self._propose_fn(plan)
+        except Exception:
+            return None
+        action_id = str(getattr(spec, "action_id", "") or "").strip()
+        if not action_id:
+            return None
+        risk = str(getattr(spec, "risk", "low") or "low").strip().lower()
+        operation = str(getattr(spec, "operation", "") or "").strip()
+        target = str(getattr(spec, "target", "") or "").strip()
+        what = operation or "push"
+        where = f" to {target}" if target else ""
+        if risk in ("medium", "high"):
+            reply = (
+                f"I've proposed {what}{where} as {action_id} ({risk} "
+                "risk). It needs the Replicate tab's Authorize and "
+                "Execute checklist — voice approval covers low-risk "
+                "work only."
+            )
+        else:
+            reply = (
+                f"I've proposed {what}{where} as {action_id}. Say "
+                "'go ahead' to approve it."
+            )
+        return (action_id, reply)
 
     # -- approval ---------------------------------------------------------
     def _handle_approval(

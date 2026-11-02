@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{colors:{"inverse-surface":"#283044","surface-container-high":"#e2e7ff","surface-tint":"#5148d7","outline":"#777586","on-secondary-fixed":"#00201d","on-primary-container":"#c1beff","primary-fixed-dim":"#c3c0ff","surface-container":"#eaedff","on-tertiary":"#ffffff","surface-container-highest":"#dae2fd","inverse-on-surface":"#eef0ff","secondary-fixed":"#9cf2e8","primary":"#2a14b4","tertiary-fixed-dim":"#ffb77d","secondary":"#006a63","surface-container-lowest":"#ffffff","secondary-fixed-dim":"#80d5cb","on-tertiary-fixed-variant":"#6e3900","surface":"#faf8ff","on-error":"#ffffff","on-error-container":"#93000a","inverse-primary":"#c3c0ff","secondary-container":"#99efe5","on-secondary":"#ffffff","on-surface-variant":"#464554","on-tertiary-container":"#ffb477","outline-variant":"#c7c4d7","on-tertiary-fixed":"#2f1500","on-secondary-fixed-variant":"#00504a","error-container":"#ffdad6","on-background":"#131b2e","tertiary-container":"#7d4200","tertiary":"#5c2f00","on-primary-fixed":"#100069","surface-container-low":"#f2f3ff","background":"#faf8ff","surface-dim":"#d2d9f4","surface-bright":"#faf8ff","on-secondary-container":"#006f67","primary-container":"#4338ca","on-surface":"#131b2e","on-primary":"#ffffff","surface-variant":"#dae2fd","on-primary-fixed-variant":"#372abf","primary-fixed":"#e3dfff","tertiary-fixed":"#ffdcc3","error":"#ba1a1a"},borderRadius:{"DEFAULT":"0.125rem","lg":"0.25rem","xl":"0.5rem","full":"0.75rem"},spacing:{"gutter-sm":"1rem","space-xs":"0.25rem","margin-mobile":"1rem","space-lg":"1.5rem","space-2xl":"3rem","margin":"2rem","gutter-lg":"2rem","space-sm":"0.5rem","space-md":"1rem","gutter":"1.5rem","space-xl":"2rem"},fontFamily:{"headline-sm":["Inter"],"headline-lg":["Inter"],"display-lg":["Inter"],"headline-lg-mobile":["Inter"],"body-md":["Inter"],"caption":["Inter"],"label-sm":["Inter"],"display-lg-mobile":["Inter"],"body-lg":["Inter"],"body-sm":["Inter"],"headline-md":["Inter"],"label-md":["Inter"]},fontSize:{"headline-sm":["16px",{"lineHeight":"24px","letterSpacing":"-0.005em","fontWeight":"600"}],"headline-lg":["30px",{"lineHeight":"38px","letterSpacing":"-0.015em","fontWeight":"600"}],"display-lg":["36px",{"lineHeight":"44px","letterSpacing":"-0.02em","fontWeight":"600"}],"headline-lg-mobile":["24px",{"lineHeight":"32px","letterSpacing":"-0.01em","fontWeight":"600"}],"body-md":["14px",{"lineHeight":"20px","letterSpacing":"0em","fontWeight":"400"}],"caption":["11px",{"lineHeight":"14px","letterSpacing":"0.03em","fontWeight":"500"}],"label-sm":["12px",{"lineHeight":"16px","letterSpacing":"0.02em","fontWeight":"500"}],"display-lg-mobile":["28px",{"lineHeight":"36px","letterSpacing":"-0.01em","fontWeight":"600"}],"body-lg":["16px",{"lineHeight":"24px","letterSpacing":"0em","fontWeight":"400"}],"body-sm":["13px",{"lineHeight":"18px","letterSpacing":"0em","fontWeight":"400"}],"headline-md":["20px",{"lineHeight":"28px","letterSpacing":"-0.01em","fontWeight":"600"}],"label-md":["13px",{"lineHeight":"18px","letterSpacing":"0.01em","fontWeight":"500"}]}}}};</script></head><body class="bg-surface font-body-md text-body-md text-on-surface antialiased"><header class="fixed top-0 left-0 right-0 h-16 bg-surface-container-lowest shadow-[0_1px_8px_rgba(0,0,0,0.04)] z-50"><div class="h-16 w-full px-gutter flex items-center justify-between"><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-sm"><div class="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[20px]">neurology</span></div><span class="font-headline-sm text-headline-sm text-primary tracking-tight font-semibold">MIMIR</span></div><div class="h-4 w-px bg-outline-variant"></div><div class="flex items-center gap-space-xs px-space-sm py-space-xs bg-surface-container-low rounded-lg"><span class="material-symbols-outlined text-on-surface-variant text-[16px]">folder_supervised</span><span class="font-label-md text-label-md text-on-surface">Core Project Workspace</span><span class="material-symbols-outlined text-on-surface-variant text-[16px]">unfold_more</span></div></div><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs px-space-sm py-space-xs bg-secondary-container/40 rounded-full"><span class="w-2 h-2 rounded-full bg-secondary animate-pulse"></span><span class="font-label-sm text-label-sm text-on-secondary-container font-medium">Copilot Connected Successfully</span></div><nav class="hidden lg:flex items-center gap-space-md" data-active-classes="text-primary font-semibold"><a class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors" data-path="assistant-matrix" href="#">Matrix</a><a class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors" data-path="knowledge-vault" href="#">Knowledge Vault</a><a class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors" data-path="habit-orchestration" href="#">Habits</a><a class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors" data-path="audit-history" href="#">Audit Logs</a></nav><div class="flex items-center gap-space-sm pl-space-sm"><button aria-label="Help &amp; Documentation" class="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" type="button"><span class="material-symbols-outlined text-[20px]">help_outline</span></button><button aria-label="Settings" class="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" type="button"><span class="material-symbols-outlined text-[20px]">settings</span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></div></header><aside class="fixed left-0 top-16 bottom-0 w-64 bg-surface-container-low shadow-[0_1px_8px_rgba(0,0,0,0.04)] z-40 flex flex-col justify-between p-space-md overflow-y-auto"><div class="flex flex-col gap-space-md"><div class="flex items-center justify-between pb-space-xs"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-primary text-[18px]">grid_view</span><span class="font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant font-semibold">The Intention Matrix</span></div><span class="material-symbols-outlined text-on-surface-variant text-[18px] cursor-pointer hover:text-on-surface">dock_to_left</span></div><div class="p-space-sm bg-surface-container-lowest rounded-xl shadow-[0_1px_4px_rgba(0,0,0,0.03)]"><div class="flex items-center justify-between mb-space-xs"><span class="font-caption text-caption uppercase text-on-surface-variant font-semibold">Active Session</span><span class="w-2 h-2 rounded-full bg-secondary"></span></div><p class="font-headline-sm text-headline-sm text-on-surface">Enterprise Risk Scope</p><p class="font-caption text-caption text-on-surface-variant mt-space-xs">Model: MIMIR Governance v4.2</p></div><div class="flex flex-col gap-space-xs"><span class="font-caption text-caption uppercase text-on-surface-variant px-space-xs font-semibold">Navigation</span><nav class="flex flex-col gap-space-xs" data-active-classes="bg-primary-container text-on-primary-container font-semibold"><a class="flex items-center gap-space-sm px-space-sm py-space-xs rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="assistant-matrix" href="#"><span class="material-symbols-outlined text-[18px]">dashboard</span><span class="font-label-md text-label-md">Intention Matrix</span></a><a class="flex items-center gap-space-sm px-space-sm py-space-xs rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="knowledge-vault" href="#"><span class="material-symbols-outlined text-[18px]">database</span><span class="font-label-md text-label-md">Knowledge Vault</span></a><a class="flex items-center gap-space-sm px-space-sm py-space-xs rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="habit-orchestration" href="#"><span class="material-symbols-outlined text-[18px]">tune</span><span class="font-label-md text-label-md">Assisting Habits</span></a><a class="flex items-center gap-space-sm px-space-sm py-space-xs rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="audit-history" href="#"><span class="material-symbols-outlined text-[18px]">history_edu</span><span class="font-label-md text-label-md">Audit Trace</span></a></nav></div><div class="flex flex-col gap-space-sm pt-space-xs"><span class="font-caption text-caption uppercase text-on-surface-variant px-space-xs font-semibold">Assisting Habits</span><div class="flex flex-col gap-space-xs"><div class="flex items-center justify-between p-space-xs rounded-lg bg-surface-container-lowest"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-secondary text-[16px]">verified_user</span><span class="font-body-sm text-body-sm text-on-surface">Safe Guardrails</span></div><input aria-label="Safe Guardrails toggle" checked="" class="accent-primary cursor-pointer" type="checkbox"/></div><div class="flex items-center justify-between p-space-xs rounded-lg bg-surface-container-lowest"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-primary text-[16px]">auto_awesome</span><span class="font-body-sm text-body-sm text-on-surface">Auto-Refine</span></div><input aria-label="Auto-Refine toggle" checked="" class="accent-primary cursor-pointer" type="checkbox"/></div><div class="flex items-center justify-between p-space-xs rounded-lg bg-surface-container-lowest"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-outline text-[16px]">visibility_lock</span><span class="font-body-sm text-body-sm text-on-surface">PII Redaction</span></div><input aria-label="PII Redaction toggle" class="accent-primary cursor-pointer" type="checkbox"/></div></div></div></div><div class="pt-space-md border-t border-outline-variant/30 flex items-center justify-between text-on-surface-variant"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-[16px]">shield</span><span class="font-caption text-caption">Compliance Tier 1</span></div><span class="font-caption text-caption font-semibold">v2.8.4</span></div></aside><div class="pl-64"><main class="relative pt-16 bg-surface min-h-screen w-full px-gutter py-space-xl"><div class="flex flex-col w-full">
+<!-- Interactive State Sync for Shell Navigation -->
+<script>
+    (function syncShellNav() {
+      // Sidebar link activation
+      const sideLinks = document.querySelectorAll('aside nav a');
+      sideLinks.forEach(link => {
+        if (link.getAttribute('data-path') === 'audit-history') {
+          link.className = 'flex items-center gap-space-sm px-space-sm py-space-xs rounded-lg bg-primary-container text-on-primary-container font-semibold transition-colors shadow-sm';
+        } else {
+          link.className = 'flex items-center gap-space-sm px-space-sm py-space-xs rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors';
+        }
+      });
+
+      // Header link activation
+      const topLinks = document.querySelectorAll('header nav a');
+      topLinks.forEach(link => {
+        if (link.getAttribute('data-path') === 'audit-history') {
+          link.className = 'font-label-md text-label-md text-primary font-semibold transition-colors';
+        } else {
+          link.className = 'font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors';
+        }
+      });
+    })();
+  </script>
+<!-- 1. Header Section -->
+<div class="flex flex-col gap-space-md mb-space-xl">
+<div class="flex flex-col xl:flex-row xl:items-center justify-between gap-space-md">
+<div class="flex flex-col gap-space-xs max-w-3xl">
+<div class="flex flex-wrap items-center gap-space-sm">
+<h1 class="font-headline-lg text-headline-lg text-on-surface tracking-tight font-semibold">
+            Audit Trace &amp; Verification Ledger
+          </h1>
+<div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary-container/40 text-on-secondary-container font-label-sm text-label-sm font-semibold shadow-sm">
+<span class="w-2 h-2 rounded-full bg-secondary animate-ping"></span>
+            Real-Time Tamper-Proof Log
+          </div>
+<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant font-caption text-caption uppercase tracking-wider font-semibold">
+            SHA-256 Merkle Chain
+          </span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant leading-relaxed">
+          Complete chronological record of all autonomous agent intentions, simulated patches, human approvals, and deterministic filesystem rollback snapshots.
+        </p>
+</div>
+<!-- Action Controls Toolbar -->
+<div class="flex flex-wrap items-center gap-space-sm">
+<div class="relative">
+<button class="flex items-center gap-space-xs px-space-md py-space-sm bg-surface-container-lowest text-on-surface rounded-lg shadow-sm hover:bg-surface-container-low transition-colors font-label-md text-label-md font-medium" id="dateRangeBtn">
+<span class="material-symbols-outlined text-outline text-[18px]">calendar_today</span>
+<span>Last 30 Days (Rolling)</span>
+<span class="material-symbols-outlined text-outline text-[16px]">expand_more</span>
+</button>
+</div>
+<div class="inline-flex items-center rounded-lg bg-surface-container-lowest shadow-sm p-0.5">
+<button class="flex items-center gap-1 px-3 py-1.5 rounded-lg text-on-surface hover:bg-surface-container-low font-label-sm text-label-sm transition-colors" title="Export as PDF">
+<span class="material-symbols-outlined text-[16px] text-error">picture_as_pdf</span>
+<span>PDF</span>
+</button>
+<span class="w-px h-4 bg-outline-variant/50"></span>
+<button class="flex items-center gap-1 px-3 py-1.5 rounded-lg text-on-surface hover:bg-surface-container-low font-label-sm text-label-sm transition-colors" title="Export Raw CSV">
+<span class="material-symbols-outlined text-[16px] text-secondary">table_view</span>
+<span>CSV</span>
+</button>
+</div>
+<button class="flex items-center gap-space-xs px-space-md py-space-sm bg-primary text-on-primary rounded-lg shadow-sm hover:bg-primary-container transition-colors font-label-md text-label-md font-medium">
+<span class="material-symbols-outlined text-[18px]">verified</span>
+<span>Cryptographic Stamp</span>
+</button>
+</div>
+</div>
+<!-- Live Search & Scope Filter Bar -->
+<div class="grid grid-cols-1 md:grid-cols-12 gap-space-sm items-center">
+<div class="md:col-span-8 lg:col-span-9 relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline text-[20px]">search</span>
+<input class="w-full pl-10 pr-4 py-2.5 rounded-lg bg-surface-container-lowest text-on-surface placeholder:text-outline font-body-md text-body-md shadow-sm outline-none focus:ring-2 focus:ring-primary/20 transition-all" id="auditSearch" placeholder="Filter by Snapshot ID (e.g. #V-9041), target filename, risk flag, or approval actor..." type="text"/>
+<div class="absolute right-2.5 top-1/2 -translate-y-1/2 hidden sm:flex items-center gap-1">
+<kbd class="px-1.5 py-0.5 text-[10px] font-caption text-on-surface-variant bg-surface-container rounded shadow-sm">⌘</kbd>
+<kbd class="px-1.5 py-0.5 text-[10px] font-caption text-on-surface-variant bg-surface-container rounded shadow-sm">K</kbd>
+</div>
+</div>
+<div class="md:col-span-4 lg:col-span-3 flex items-center gap-space-xs">
+<select aria-label="Filter events by severity" class="w-full px-3 py-2.5 rounded-lg bg-surface-container-lowest text-on-surface font-label-md text-label-md shadow-sm outline-none cursor-pointer">
+<option value="all">Severity: All Thresholds</option>
+<option value="critical">Critical Escalations Only</option>
+<option value="benign">Non-Invasive Intention Logs</option>
+<option value="rollback">Rollback Operations</option>
+</select>
+<button aria-label="Refresh audit ledger feed" class="p-2.5 rounded-lg bg-surface-container-lowest text-on-surface-variant hover:text-on-surface shadow-sm transition-colors flex items-center justify-center" title="Refresh Feed">
+<span class="material-symbols-outlined text-[18px]">sync</span>
+</button>
+</div>
+</div>
+</div>
+<!-- 2. Metrics Row (Summary Statistics Bento) -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-space-md mb-space-xl">
+<!-- Card 1 -->
+<div class="p-space-lg rounded-xl bg-surface-container-lowest shadow-sm flex flex-col justify-between relative overflow-hidden group">
+<div class="absolute -right-6 -bottom-6 w-24 h-24 rounded-full bg-primary/5 transition-transform group-hover:scale-125"></div>
+<div>
+<div class="flex items-center justify-between mb-space-sm">
+<span class="font-caption text-caption uppercase tracking-wider text-on-surface-variant font-semibold">Total Interventions</span>
+<div class="w-8 h-8 rounded-lg bg-primary-fixed flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[18px]">history</span>
+</div>
+</div>
+<div class="flex items-baseline gap-space-sm">
+<span class="font-display-lg text-display-lg font-semibold text-on-surface">128</span>
+<span class="font-label-md text-label-md text-secondary font-medium flex items-center">
+<span class="material-symbols-outlined text-[14px]">arrow_upward</span> +14 today
+          </span>
+</div>
+</div>
+<div class="pt-space-md mt-space-sm flex items-center justify-between">
+<span class="font-caption text-caption text-on-surface-variant">Logged operations</span>
+<span class="inline-flex items-center gap-1 font-caption text-caption font-semibold text-secondary">
+<span class="material-symbols-outlined text-[14px]">undo</span> 100% Reversible
+        </span>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="p-space-lg rounded-xl bg-surface-container-lowest shadow-sm flex flex-col justify-between relative overflow-hidden group">
+<div class="absolute -right-6 -bottom-6 w-24 h-24 rounded-full bg-secondary/5 transition-transform group-hover:scale-125"></div>
+<div>
+<div class="flex items-center justify-between mb-space-sm">
+<span class="font-caption text-caption uppercase tracking-wider text-on-surface-variant font-semibold">Human Approval Rate</span>
+<div class="w-8 h-8 rounded-lg bg-secondary-fixed flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-[18px]">how_to_reg</span>
+</div>
+</div>
+<div class="flex items-baseline gap-space-sm">
+<span class="font-display-lg text-display-lg font-semibold text-on-surface">98.4%</span>
+<span class="font-label-md text-label-md text-secondary font-medium">126 / 128</span>
+</div>
+</div>
+<div class="pt-space-md mt-space-sm flex items-center justify-between">
+<span class="font-caption text-caption text-on-surface-variant">Direct User Consents</span>
+<span class="inline-flex items-center gap-1 font-caption text-caption font-semibold text-on-surface">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span> 0 unauthorized disk writes
+        </span>
+</div>
+</div>
+<!-- Card 3 -->
+<div class="p-space-lg rounded-xl bg-surface-container-lowest shadow-sm flex flex-col justify-between relative overflow-hidden group">
+<div class="absolute -right-6 -bottom-6 w-24 h-24 rounded-full bg-surface-tint/5 transition-transform group-hover:scale-125"></div>
+<div>
+<div class="flex items-center justify-between mb-space-sm">
+<span class="font-caption text-caption uppercase tracking-wider text-on-surface-variant font-semibold">Current Safety Ledger</span>
+<div class="w-8 h-8 rounded-lg bg-surface-container-high flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[18px]">verified_user</span>
+</div>
+</div>
+<div class="flex items-baseline gap-space-sm">
+<span class="font-display-lg text-display-lg font-semibold text-on-surface">Zero Drift</span>
+<span class="font-label-md text-label-md text-primary font-medium">Synced</span>
+</div>
+</div>
+<div class="pt-space-md mt-space-sm flex items-center justify-between">
+<span class="font-caption text-caption text-on-surface-variant font-mono">SHA-256 Validated</span>
+<span class="inline-flex items-center gap-1 font-caption text-caption font-semibold text-secondary">
+<span class="material-symbols-outlined text-[14px]">check_circle</span> Zero integrity deviations
+        </span>
+</div>
+</div>
+</div>
+<!-- 3. Main Workspace Grid: Timeline & Integrity Drawer -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-space-xl items-start">
+<!-- Left Column: Filter Pills + Event Stream (8 cols) -->
+<div class="lg:col-span-8 flex flex-col gap-space-md">
+<!-- Filter Segment Pills -->
+<div class="flex flex-wrap items-center gap-space-xs p-1 rounded-xl bg-surface-container-low shadow-sm">
+<button class="event-filter active px-3.5 py-1.5 rounded-lg bg-surface-container-lowest text-on-surface font-label-md text-label-md font-semibold shadow-sm transition-all" data-type="all">
+          All Events <span class="ml-1 text-on-surface-variant font-normal">128</span>
+</button>
+<button class="event-filter px-3.5 py-1.5 rounded-lg text-on-surface-variant hover:text-on-surface font-label-md text-label-md font-medium transition-all" data-type="patch">
+          Patches Applied <span class="ml-1 text-outline font-normal">42</span>
+</button>
+<button class="event-filter px-3.5 py-1.5 rounded-lg text-on-surface-variant hover:text-on-surface font-label-md text-label-md font-medium transition-all" data-type="simulation">
+          Memory Simulations <span class="ml-1 text-outline font-normal">71</span>
+</button>
+<button class="event-filter px-3.5 py-1.5 rounded-lg text-on-surface-variant hover:text-on-surface font-label-md text-label-md font-medium transition-all" data-type="rollback">
+          Rollbacks <span class="ml-1 text-outline font-normal">2</span>
+</button>
+<button class="event-filter px-3.5 py-1.5 rounded-lg text-on-surface-variant hover:text-on-surface font-label-md text-label-md font-medium transition-all" data-type="security">
+          Security Alerts <span class="ml-1 text-outline font-normal">0</span>
+</button>
+</div>
+<!-- Events List Feed -->
+<div class="flex flex-col gap-space-md" id="eventsContainer">
+<!-- EVENT 1: Active Hot Patch -->
+<article class="p-space-lg rounded-xl bg-surface-container-lowest shadow-sm hover:shadow-md transition-shadow relative overflow-hidden" data-event-type="patch">
+<div class="flex flex-col gap-space-sm">
+<!-- Event Metadata Header -->
+<div class="flex flex-wrap items-center justify-between gap-space-xs">
+<div class="flex items-center gap-space-xs">
+<span class="w-2.5 h-2.5 rounded-full bg-secondary"></span>
+<span class="font-label-sm text-label-sm font-semibold text-secondary uppercase tracking-wider">Production Patch Applied</span>
+<span class="text-outline-variant">•</span>
+<span class="font-caption text-caption text-on-surface-variant">15 minutes ago</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface font-mono font-caption text-caption">#V-9041</span>
+<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-secondary-container/30 text-on-secondary-container font-label-sm text-label-sm font-semibold">
+<span class="material-symbols-outlined text-[14px]">format_image_left</span> Verified &amp; Reversible
+                </span>
+</div>
+</div>
+<!-- Title & Context -->
+<div class="flex flex-col gap-0.5">
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-semibold">
+                Applied 5s Network Timeout Shield to <code class="font-mono text-primary bg-primary-fixed/30 px-1 py-0.5 rounded">customer_checkout_flow.py</code>
+</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">
+                Autonomous agent simulated an uncaught <code class="font-mono text-[13px]">ReadTimeoutException</code> in the gateway handler and applied an adaptive circuit breaker pattern.
+              </p>
+</div>
+<!-- Inline Meta Tags -->
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-space-sm p-space-sm rounded-lg bg-surface-container-low">
+<div class="flex items-center gap-space-xs">
+<div class="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-on-primary text-[12px] font-semibold">A</div>
+<div class="flex flex-col">
+<span class="font-caption text-caption text-on-surface-variant">Authorized Actor</span>
+<span class="font-label-md text-label-md text-on-surface font-medium">Alexandra (User Approval via One-Click)</span>
+</div>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-secondary text-[20px]">bolt</span>
+<div class="flex flex-col">
+<span class="font-caption text-caption text-on-surface-variant">Habit Principle Triggered</span>
+<span class="font-label-md text-label-md text-on-surface font-medium">Auto-Catch Crashing Network Errors</span>
+</div>
+</div>
+</div>
+<!-- Side-by-Side Diff Preview Drawer -->
+<div class="mt-space-xs rounded-lg overflow-hidden bg-surface-container">
+<div class="flex items-center justify-between px-space-md py-space-xs bg-surface-container-high">
+<span class="font-caption text-caption uppercase tracking-wider font-semibold text-on-surface-variant">Deterministic Snapshot Diff</span>
+<span class="font-caption text-caption text-on-surface-variant font-mono">AST Tree #8902 → #8903 (+12, -2)</span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 text-body-sm font-mono p-space-sm gap-space-sm bg-surface-container-lowest">
+<div class="p-space-xs bg-error-container/20 rounded">
+<div class="font-caption text-caption text-error font-semibold mb-1">ORIGINAL (Snapshot #V-9040)</div>
+<pre class="overflow-x-auto text-[12px] text-on-surface"><code>resp = requests.post(
+    GATEWAY_URL, 
+    json=payload
+)</code></pre>
+</div>
+<div class="p-space-xs bg-secondary-container/20 rounded">
+<div class="font-caption text-caption text-secondary font-semibold mb-1">ENFORCED (Snapshot #V-9041)</div>
+<pre class="overflow-x-auto text-[12px] text-on-surface"><code>resp = safe_http_call(
+    GATEWAY_URL, 
+    json=payload, 
+    timeout_sec=5.0
+)</code></pre>
+</div>
+</div>
+</div>
+<!-- Interactive Action Bar -->
+<div class="flex flex-wrap items-center justify-between gap-space-sm pt-space-xs">
+<div class="flex items-center gap-space-xs text-on-surface-variant font-caption text-caption">
+<span class="material-symbols-outlined text-[16px] text-secondary">memory</span>
+<span>Hot Memory Snapshot Ready</span>
+<span class="text-outline-variant">•</span>
+<span class="font-mono">Merkle Hash: 8bfa92...cc10</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<button class="px-space-md py-1.5 rounded-lg bg-surface-container text-on-surface hover:bg-surface-container-high transition-colors font-label-md text-label-md font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">visibility</span>
+<span>View Event Diff</span>
+</button>
+<button class="px-space-md py-1.5 rounded-lg bg-error-container text-on-error-container hover:bg-error-container/80 transition-colors font-label-md text-label-md font-semibold flex items-center gap-1" title="1-Click Safe Rollback to Previous State">
+<span class="material-symbols-outlined text-[16px]">history</span>
+<span>Rollback Options</span>
+</button>
+</div>
+</div>
+</div>
+</article>
+<!-- EVENT 2: Knowledge Sync -->
+<article class="p-space-lg rounded-xl bg-surface-container-lowest shadow-sm hover:shadow-md transition-shadow relative overflow-hidden" data-event-type="simulation">
+<div class="flex flex-col gap-space-sm">
+<div class="flex flex-wrap items-center justify-between gap-space-xs">
+<div class="flex items-center gap-space-xs">
+<span class="w-2.5 h-2.5 rounded-full bg-primary"></span>
+<span class="font-label-sm text-label-sm font-semibold text-primary uppercase tracking-wider">Vector Memory Sync</span>
+<span class="text-outline-variant">•</span>
+<span class="font-caption text-caption text-on-surface-variant">1 hour ago</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface font-mono font-caption text-caption">#V-9040</span>
+<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-surface-container-low text-on-surface font-label-sm text-label-sm font-medium">
+                  Zero Conflicts
+                </span>
+</div>
+</div>
+<div class="flex flex-col gap-0.5">
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-semibold">
+                Indexed Schema Update <code class="font-mono text-primary bg-primary-fixed/30 px-1 py-0.5 rounded">api_contracts/payment_v2.json</code>
+</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">
+                Synthesized OpenAPI 3.1 specification contracts into localized embedding partitions. 2,120 tokens cached with zero namespace collisions.
+              </p>
+</div>
+<div class="flex flex-wrap items-center justify-between gap-space-sm pt-space-xs">
+<div class="flex items-center gap-space-sm">
+<div class="flex items-center gap-1 font-caption text-caption text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px] text-primary">smart_toy</span>
+<span>Actor: Automated Knowledge Sync</span>
+</div>
+<span class="text-outline-variant">•</span>
+<span class="font-caption text-caption text-on-surface-variant">2,120 Tokens Indexed</span>
+</div>
+<button class="px-space-md py-1.5 rounded-lg bg-surface-container text-on-surface hover:bg-surface-container-high transition-colors font-label-md text-label-md font-medium">
+                Inspect Vectors
+              </button>
+</div>
+</div>
+</article>
+<!-- EVENT 3: Guardrail AST Scan -->
+<article class="p-space-lg rounded-xl bg-surface-container-lowest shadow-sm hover:shadow-md transition-shadow relative overflow-hidden" data-event-type="simulation">
+<div class="flex flex-col gap-space-sm">
+<div class="flex flex-wrap items-center justify-between gap-space-xs">
+<div class="flex items-center gap-space-xs">
+<span class="w-2.5 h-2.5 rounded-full bg-secondary"></span>
+<span class="font-label-sm text-label-sm font-semibold text-secondary uppercase tracking-wider">Pre-Commit AST Simulation</span>
+<span class="text-outline-variant">•</span>
+<span class="font-caption text-caption text-on-surface-variant">3 hours ago</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface font-mono font-caption text-caption">#V-9039</span>
+<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-secondary-container/40 text-on-secondary-container font-label-sm text-label-sm font-semibold">
+                  Safe Pass
+                </span>
+</div>
+</div>
+<div class="flex flex-col gap-0.5">
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-semibold">
+                AST Simulation - PII Redaction &amp; Secret Leaks Check
+              </h2>
+<p class="font-body-md text-body-md text-on-surface-variant">
+                Evaluated AST token nodes across 12,450 lines of codebase diff. Verified zero API secret exposures, authorization bypasses, or GDPR PII field disclosures.
+              </p>
+</div>
+<div class="flex flex-wrap items-center justify-between gap-space-sm pt-space-xs">
+<div class="flex items-center gap-space-sm">
+<div class="flex items-center gap-1 font-caption text-caption text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px] text-secondary">verified_user</span>
+<span>Actor: Automated Guardrail Engine</span>
+</div>
+<span class="text-outline-variant">•</span>
+<span class="font-caption text-caption text-on-surface-variant">12,450 Lines Checked • 0 Leakages</span>
+</div>
+<button class="px-space-md py-1.5 rounded-lg bg-surface-container text-on-surface hover:bg-surface-container-high transition-colors font-label-md text-label-md font-medium">
+                View AST Tree Log
+              </button>
+</div>
+</div>
+</article>
+<!-- EVENT 4: Rollback Executed -->
+<article class="p-space-lg rounded-xl bg-surface-container-lowest shadow-sm hover:shadow-md transition-shadow relative overflow-hidden" data-event-type="rollback">
+<div class="flex flex-col gap-space-sm">
+<div class="flex flex-wrap items-center justify-between gap-space-xs">
+<div class="flex items-center gap-space-xs">
+<span class="w-2.5 h-2.5 rounded-full bg-tertiary"></span>
+<span class="font-label-sm text-label-sm font-semibold text-tertiary uppercase tracking-wider">Rollback Safely Executed</span>
+<span class="text-outline-variant">•</span>
+<span class="font-caption text-caption text-on-surface-variant">Yesterday, 18:42</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<span class="px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface font-mono font-caption text-caption">#V-9038</span>
+<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-surface-container-low text-on-surface font-label-sm text-label-sm font-semibold">
+                  Restored Clean
+                </span>
+</div>
+</div>
+<div class="flex flex-col gap-0.5">
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-semibold">
+                Reverted Experimental Checkout Retry Config
+              </h2>
+<p class="font-body-md text-body-md text-on-surface-variant">
+                Human operator triggered 1-click snapshot restore. Safely rewound local sandbox state from #V-9039 back to golden baseline #V-9038 with zero disk file corruption.
+              </p>
+</div>
+<div class="flex flex-wrap items-center justify-between gap-space-sm pt-space-xs">
+<div class="flex items-center gap-space-sm">
+<div class="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-on-primary text-[12px] font-semibold">A</div>
+<span class="font-caption text-caption text-on-surface-variant">Actor: Alexandra (1-Click Revert)</span>
+<span class="text-outline-variant">•</span>
+<span class="font-caption text-caption text-secondary font-medium">Restored baseline snapshot cleanly</span>
+</div>
+<button class="px-space-md py-1.5 rounded-lg bg-surface-container text-on-surface hover:bg-surface-container-high transition-colors font-label-md text-label-md font-medium">
+                Audit Snapshot Hash
+              </button>
+</div>
+</div>
+</article>
+</div>
+</div>
+<!-- Right Column: Integrity Ledger & Cryptographic State Drawer (4 cols) -->
+<div class="lg:col-span-4 flex flex-col gap-space-md">
+<!-- Integrity Card -->
+<div class="p-space-lg rounded-xl bg-surface-container-lowest shadow-sm flex flex-col gap-space-md">
+<div class="flex items-center justify-between pb-space-xs border-b border-surface-container">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-primary text-[20px]">policy</span>
+<span class="font-headline-sm text-headline-sm text-on-surface font-semibold">Integrity &amp; Compliance</span>
+</div>
+<span class="material-symbols-outlined text-secondary text-[20px]">verified</span>
+</div>
+<!-- Compliance Badges -->
+<div class="flex flex-col gap-space-sm">
+<div class="flex items-center justify-between p-space-sm rounded-lg bg-surface-container-low">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-primary text-[18px]">verified_user</span>
+<span class="font-label-md text-label-md text-on-surface font-semibold">SOC-2 Type II Certified</span>
+</div>
+<span class="px-2 py-0.5 rounded-full bg-secondary-container/40 text-on-secondary-container font-caption text-caption font-semibold">Active</span>
+</div>
+<div class="flex items-center justify-between p-space-sm rounded-lg bg-surface-container-low">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-secondary text-[18px]">gavel</span>
+<span class="font-label-md text-label-md text-on-surface font-semibold">GDPR Article 32 Compliant</span>
+</div>
+<span class="px-2 py-0.5 rounded-full bg-secondary-container/40 text-on-secondary-container font-caption text-caption font-semibold">Immutable</span>
+</div>
+</div>
+<!-- Cryptographic Merkle Root -->
+<div class="p-space-sm rounded-lg bg-surface-container-low flex flex-col gap-1">
+<span class="font-caption text-caption text-on-surface-variant uppercase tracking-wider font-semibold">Active Ledger Root Hash</span>
+<div class="flex items-center justify-between">
+<span class="font-mono text-label-sm text-label-sm font-semibold text-on-surface">#0928-AD7-882F</span>
+<button class="text-primary hover:text-on-primary-fixed-variant transition-colors" title="Copy Root Hash">
+<span class="material-symbols-outlined text-[16px]">content_copy</span>
+</button>
+</div>
+<span class="font-caption text-caption text-on-surface-variant">All blocks chained deterministically via SHA-256.</span>
+</div>
+<!-- Rollback Health Check status -->
+<div class="flex flex-col gap-space-xs p-space-sm rounded-lg bg-secondary-container/20">
+<div class="flex items-center gap-space-xs text-secondary font-semibold font-label-md text-label-md">
+<span class="material-symbols-outlined text-[18px]">health_and_safety</span>
+<span>1-Click Rollback Health Check</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface">
+            All 42 historical checkpoints are intact, bit-verified, and restorable to working disk within &lt;1.2 seconds.
+          </p>
+</div>
+<!-- Micro Storage Stat -->
+<div class="flex flex-col gap-1">
+<div class="flex justify-between font-caption text-caption text-on-surface-variant font-medium">
+<span>Audit Journal Partition Size</span>
+<span class="text-on-surface font-semibold">14.8 MB / 500 MB</span>
+</div>
+<div class="w-full h-1.5 bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-primary rounded-full" style="width: 3%;"></div>
+</div>
+</div>
+</div>
+<!-- Quick Inspection Mini Widget -->
+<div class="p-space-lg rounded-xl bg-surface-container-lowest shadow-sm flex flex-col gap-space-sm">
+<span class="font-caption text-caption uppercase tracking-wider font-semibold text-on-surface-variant">Live Ledger Topology</span>
+<div class="flex items-center gap-space-xs p-space-xs rounded-lg bg-surface-container-low">
+<span class="material-symbols-outlined text-outline text-[18px]">terminal</span>
+<span class="font-mono text-[12px] text-on-surface truncate">mimir-audit-cli verify --deep</span>
+</div>
+<button class="w-full py-2 rounded-lg bg-surface-container text-on-surface hover:bg-surface-container-high transition-colors font-label-md text-label-md font-semibold text-center">
+          Open Terminal Trace Inspector
+        </button>
+</div>
+</div>
+</div>
+<!-- 4. Bottom Action Bar -->
+<div class="mt-space-2xl pt-space-lg border-t border-surface-container flex flex-col sm:flex-row items-center justify-between gap-space-md pb-space-lg">
+<div class="flex items-center gap-space-sm">
+<div class="w-3 h-3 rounded-full bg-secondary"></div>
+<div class="flex flex-col">
+<span class="font-label-md text-label-md text-on-surface font-semibold">Tamper-Proof Audit Journal Synced</span>
+<span class="font-caption text-caption text-on-surface-variant">Next automatic compliance rollup in 18 minutes</span>
+</div>
+</div>
+<div class="flex flex-wrap items-center gap-space-sm">
+<button class="flex items-center gap-space-xs px-space-md py-space-sm bg-surface-container-lowest text-on-surface rounded-lg shadow-sm hover:bg-surface-container-low transition-colors font-label-md text-label-md font-medium">
+<span class="material-symbols-outlined text-[18px] text-primary">download</span>
+<span>Download Cryptographic Audit Trail</span>
+</button>
+<button class="flex items-center gap-space-xs px-space-md py-space-sm bg-primary text-on-primary rounded-lg shadow-sm hover:bg-primary-container transition-colors font-label-md text-label-md font-medium">
+<span class="material-symbols-outlined text-[18px]">security_update_good</span>
+<span>Verify Ledger Integrity</span>
+</button>
+</div>
+</div>
+<!-- Filter & Search Client Interaction -->
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const filterButtons = document.querySelectorAll('.event-filter');
+      const articles = document.querySelectorAll('#eventsContainer article');
+      const searchInput = document.getElementById('auditSearch');
+
+      function filterEvents() {
+        const activeBtn = document.querySelector('.event-filter.active');
+        const filterType = activeBtn ? activeBtn.getAttribute('data-type') : 'all';
+        const query = (searchInput.value || '').toLowerCase().trim();
+
+        articles.forEach(article => {
+          const type = article.getAttribute('data-event-type');
+          const matchesType = (filterType === 'all') || (type === filterType);
+          const text = article.textContent.toLowerCase();
+          const matchesQuery = query === '' || text.includes(query);
+
+          if (matchesType && matchesQuery) {
+            article.classList.remove('hidden');
+          } else {
+            article.classList.add('hidden');
+          }
+        });
+      }
+
+      filterButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          filterButtons.forEach(b => {
+            b.classList.remove('active', 'bg-surface-container-lowest', 'text-on-surface', 'shadow-sm');
+            b.classList.add('text-on-surface-variant');
+          });
+          btn.classList.add('active', 'bg-surface-container-lowest', 'text-on-surface', 'shadow-sm');
+          btn.classList.remove('text-on-surface-variant');
+          filterEvents();
+        });
+      });
+
+      if (searchInput) {
+        searchInput.addEventListener('input', filterEvents);
+      }
+    });
+  </script>
+</div></main></div></body></html>

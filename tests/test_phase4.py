@@ -29,7 +29,34 @@ from desktop_app.personas import (
 )
 from desktop_app.prefs import DesktopPrefs
 from desktop_app.state import AppState, get_llm_fn
+from mimir.episodes import (
+    BehavioralEpisode,
+    EpisodeContext,
+    EpisodeOutcome,
+    FileTransition,
+)
 from mimir.store import PrincipleStore
+
+
+def _learn_episode(eid="ep_learn_001"):
+    return BehavioralEpisode(
+        id=eid,
+        source="git",
+        repo="/repo",
+        source_ref="aaa111",
+        observed_at="2026-10-27T08:30:00Z",
+        actor="Ada",
+        summary="fix: isolate db errors",
+        context=EpisodeContext(scope="payments", language="python"),
+        transitions=[
+            FileTransition(path="payments/db.py", status="modified",
+                           diff="+raise DomainError", additions=1,
+                           deletions=0)
+        ],
+        outcome=EpisodeOutcome(build="pass", tests="pass"),
+        redactions_applied=0,
+        redaction_kinds=[],
+    )
 
 
 class FakeResponse:
@@ -113,6 +140,76 @@ class GetLlmFnTest(unittest.TestCase):
                 result = state.replicate("live task", force_offline=True)
             self.assertIn("scaffold", result.replicated_solution)
             self.assertIsNone(result.contrast_baseline)
+        finally:
+            state.close()
+
+
+class LearnLlmWiringTest(unittest.TestCase):
+    """Phase 0: AppState.learn() resolves/forwards llm_fn (no more bypass)."""
+
+    def test_explicit_llm_fn_reaches_detective(self):
+        sentinel = lambda prompt: '{"name": "x"}'  # noqa: E731
+        state = AppState(store_path=":memory:")
+        try:
+            with mock.patch("desktop_app.state.infer_principles",
+                            return_value=[]) as mined:
+                state.learn([_learn_episode()], llm_fn=sentinel)
+            _, kwargs = mined.call_args
+            self.assertIs(kwargs["llm_fn"], sentinel)
+        finally:
+            state.close()
+
+    def test_default_resolves_from_prefs(self):
+        sentinel = lambda prompt: "LIVE"  # noqa: E731
+        state = AppState(store_path=":memory:")
+        try:
+            with mock.patch("desktop_app.state.get_llm_fn",
+                            return_value=sentinel), \
+                    mock.patch("desktop_app.state.infer_principles",
+                               return_value=[]) as mined:
+                state.learn([_learn_episode()])
+            _, kwargs = mined.call_args
+            self.assertIs(kwargs["llm_fn"], sentinel)
+        finally:
+            state.close()
+
+    def test_offline_prefs_stay_offline(self):
+        state = AppState(store_path=":memory:")
+        try:
+            with mock.patch("desktop_app.state.infer_principles",
+                            return_value=[]) as mined:
+                state.learn([_learn_episode()])  # default prefs: offline
+            _, kwargs = mined.call_args
+            self.assertIsNone(kwargs["llm_fn"])
+        finally:
+            state.close()
+
+    def test_auto_llm_failure_falls_back_to_offline(self):
+        def _boom(prompt):
+            raise LLMError("daemon stopped")
+        state = AppState(store_path=":memory:")
+        try:
+            with mock.patch("desktop_app.state.get_llm_fn",
+                            return_value=_boom):
+                principles = state.learn([_learn_episode()],
+                                         min_cluster_size=1)
+            self.assertTrue(principles)  # offline scaffold still mined
+            self.assertEqual(len(state.list_principles()),
+                             len(principles))
+        finally:
+            state.close()
+
+    def test_explicit_llm_failure_propagates(self):
+        from mimir.detective import LLMError as DetectiveLLMError
+
+        def _boom(prompt):
+            raise LLMError("bad output")
+        state = AppState(store_path=":memory:")
+        try:
+            # Detective wraps provider errors; the explicit path must not
+            # swallow them into the offline scaffold.
+            with self.assertRaises(DetectiveLLMError):
+                state.learn([_learn_episode()], llm_fn=_boom)
         finally:
             state.close()
 
@@ -741,6 +838,49 @@ class UiWiringRegressionTest(unittest.TestCase):
                 self.assertFalse(panel.isHidden())
                 dismiss.click()
                 QtWidgets.QApplication.processEvents()
+                self.assertTrue(panel.isHidden())
+            finally:
+                tab.close()
+                tab.deleteLater()
+        finally:
+            state.close()
+
+    def test_observe_now_click_ignores_checked_signal_arg(self):
+        # Regression: QPushButton.clicked passes a `checked` bool. It must
+        # not land in on_observe_now(on_success=...), which used to crash
+        # with "'bool' object is not callable" and raise the error panel
+        # even though observation succeeded.
+        _, QtWidgets, _ = _needs_qt(self)
+        from desktop_app.tabs.observe import build_observe_tab
+
+        class _Watcher:
+            watching = False
+            last_error = ""
+
+            def start(self, repo, roots, max_commits=10):
+                return (True, "ok")
+
+            def stop(self):
+                pass
+
+        state = AppState(store_path=":memory:")
+        try:
+            state.observe = lambda repo, roots, m=10: []  # type: ignore[method-assign]
+            tab = build_observe_tab(state, self._status(),
+                                    lambda _t: None, _Watcher())
+            try:
+                once = self._find_button(tab, QtWidgets, "Observe now")
+                self.assertIsNotNone(once)
+                once.click()
+                QtWidgets.QApplication.processEvents()
+                for label in tab.findChildren(QtWidgets.QLabel):
+                    self.assertNotIn("not callable", label.text())
+                dismiss = self._find_button(tab, QtWidgets, "Dismiss")
+                self.assertIsNotNone(dismiss)
+                panel = dismiss.parent()
+                while panel is not None and not panel.isWidgetType():
+                    panel = panel.parent()
+                self.assertIsNotNone(panel)
                 self.assertTrue(panel.isHidden())
             finally:
                 tab.close()

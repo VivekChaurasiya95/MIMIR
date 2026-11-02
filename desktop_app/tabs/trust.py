@@ -59,7 +59,7 @@ def build_trust_tab(state: AppState, status: Any) -> Any:
     access_box, access_lay = card()
     access_title = QtWidgets.QLabel("Access")
     access_title.setObjectName("h2")
-    access_sub = QtWidgets.QLabel("Choose what Habitous can observe and interact with.")
+    access_sub = QtWidgets.QLabel("Choose what MIMIR can observe and interact with.")
     access_sub.setObjectName("muted")
     access_lay.addWidget(access_title)
     access_lay.addWidget(access_sub)
@@ -110,7 +110,7 @@ def build_trust_tab(state: AppState, status: Any) -> Any:
     def show_retention() -> None:
         box = QtWidgets.QMessageBox(root)
         box.setWindowTitle("Retention policy")
-        box.setText("Habitous keeps learned principles until you delete them.")
+        box.setText("MIMIR keeps learned principles until you delete them.")
         box.setInformativeText(
             "Nothing expires automatically and nothing leaves this "
             "device. Use “Clear all learned data” below to wipe "

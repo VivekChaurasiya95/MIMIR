@@ -4,7 +4,7 @@ Settings → General → "Start on system launch" persists a preference; these
 helpers give that switch its real effect:
 
 - Windows: ``HKCU\\...\\Run`` value (per-user, no elevation needed).
-- Linux: ``~/.config/autostart/habitous.desktop`` entry.
+- Linux: ``~/.config/autostart/mimir.desktop`` entry.
 - Other platforms: honest ``(False, reason)`` — the caller keeps the
   preference but tells the user it has no OS effect here.
 
@@ -29,8 +29,8 @@ __all__ = [
 ]
 
 #: Stable identifiers for the login item on every platform.
-APP_ID = "habitous"
-RUN_VALUE_NAME = "Habitous"
+APP_ID = "mimir"
+RUN_VALUE_NAME = "MIMIR"
 
 
 def login_command() -> str:
@@ -97,7 +97,7 @@ def set_autostart(enabled: bool) -> tuple[bool, str]:
                 ) as key:
                     winreg.SetValueEx(key, RUN_VALUE_NAME, 0,
                                       winreg.REG_SZ, login_command())
-                return (True, "Habitous will start when you sign in.")
+                return (True, "MIMIR will start when you sign in.")
             with winreg.OpenKey(
                 winreg.HKEY_CURRENT_USER, key_path, 0,
                 winreg.KEY_SET_VALUE,
@@ -115,7 +115,7 @@ def set_autostart(enabled: bool) -> tuple[bool, str]:
             if enabled:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(desktop_entry_text(), encoding="utf-8")
-                return (True, "Habitous will start when you sign in.")
+                return (True, "MIMIR will start when you sign in.")
             try:
                 target.unlink()
             except FileNotFoundError:

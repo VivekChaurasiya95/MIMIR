@@ -1,6 +1,6 @@
 # MIMIR Desktop: Standalone Tab Design Specifications
 
-> **Document:** `desktop_app/TAB_DESIGNS.md`  
+> **Document:** `docs/TAB_DESIGNS.md`  
 > **Source Mockup:** [`desktop_app/assets/ui/mimir_desktop_overview.jpg`](file:///d:/Projects/MIMIR/desktop_app/assets/ui/mimir_desktop_overview.jpg)  
 > **Scope:** High-fidelity architectural and visual breakdown for each of the 6 standalone surfaces in the MIMIR desktop application.
 

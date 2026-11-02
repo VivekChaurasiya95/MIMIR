@@ -1,5 +1,5 @@
 # MIMIR: Website Design System & Experience Specification
-> **Document:** `DESIGN.md`  
+> **Document:** `docs/DESIGN.md`  
 > **Aesthetic Philosophy:** *Serene Intelligence — Calm, Light, Humane, and Weightless.*  
 > **Atmosphere:** Breathable whitespace, gentle porcelain surfaces, soft natural light, and quiet elegance.
 

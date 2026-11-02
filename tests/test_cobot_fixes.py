@@ -1,6 +1,6 @@
 """Digital-cobot regression tests: live answers, mic, folders, roam.
 
-Covers the reported Habitous gaps: Replicate answering the actual
+Covers the reported MIMIR gaps: Replicate answering the actual
 request (not a generic template), Home mic capture + shutdown, watched
 folder removal, and Llama-3.2-grounded activity understanding during
 autonomous wandering. Qt-free except where marked.

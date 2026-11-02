@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{colors:{"inverse-surface":"#283044","surface-container-high":"#e2e7ff","surface-tint":"#5148d7","outline":"#777586","on-secondary-fixed":"#00201d","on-primary-container":"#c1beff","primary-fixed-dim":"#c3c0ff","surface-container":"#eaedff","on-tertiary":"#ffffff","surface-container-highest":"#dae2fd","inverse-on-surface":"#eef0ff","secondary-fixed":"#9cf2e8","primary":"#2a14b4","tertiary-fixed-dim":"#ffb77d","secondary":"#006a63","surface-container-lowest":"#ffffff","secondary-fixed-dim":"#80d5cb","on-tertiary-fixed-variant":"#6e3900","surface":"#faf8ff","on-error":"#ffffff","on-error-container":"#93000a","inverse-primary":"#c3c0ff","secondary-container":"#99efe5","on-secondary":"#ffffff","on-surface-variant":"#464554","on-tertiary-container":"#ffb477","outline-variant":"#c7c4d7","on-tertiary-fixed":"#2f1500","on-secondary-fixed-variant":"#00504a","error-container":"#ffdad6","on-background":"#131b2e","tertiary-container":"#7d4200","tertiary":"#5c2f00","on-primary-fixed":"#100069","surface-container-low":"#f2f3ff","background":"#faf8ff","surface-dim":"#d2d9f4","surface-bright":"#faf8ff","on-secondary-container":"#006f67","primary-container":"#4338ca","on-surface":"#131b2e","on-primary":"#ffffff","surface-variant":"#dae2fd","on-primary-fixed-variant":"#372abf","primary-fixed":"#e3dfff","tertiary-fixed":"#ffdcc3","error":"#ba1a1a"},borderRadius:{"DEFAULT":"0.125rem","lg":"0.25rem","xl":"0.5rem","full":"0.75rem"},spacing:{"gutter-sm":"1rem","space-xs":"0.25rem","margin-mobile":"1rem","space-lg":"1.5rem","space-2xl":"3rem","margin":"2rem","gutter-lg":"2rem","space-sm":"0.5rem","space-md":"1rem","gutter":"1.5rem","space-xl":"2rem"},fontFamily:{"headline-sm":["Inter"],"headline-lg":["Inter"],"display-lg":["Inter"],"headline-lg-mobile":["Inter"],"body-md":["Inter"],"caption":["Inter"],"label-sm":["Inter"],"display-lg-mobile":["Inter"],"body-lg":["Inter"],"body-sm":["Inter"],"headline-md":["Inter"],"label-md":["Inter"]},fontSize:{"headline-sm":["16px",{"lineHeight":"24px","letterSpacing":"-0.005em","fontWeight":"600"}],"headline-lg":["30px",{"lineHeight":"38px","letterSpacing":"-0.015em","fontWeight":"600"}],"display-lg":["36px",{"lineHeight":"44px","letterSpacing":"-0.02em","fontWeight":"600"}],"headline-lg-mobile":["24px",{"lineHeight":"32px","letterSpacing":"-0.01em","fontWeight":"600"}],"body-md":["14px",{"lineHeight":"20px","letterSpacing":"0em","fontWeight":"400"}],"caption":["11px",{"lineHeight":"14px","letterSpacing":"0.03em","fontWeight":"500"}],"label-sm":["12px",{"lineHeight":"16px","letterSpacing":"0.02em","fontWeight":"500"}],"display-lg-mobile":["28px",{"lineHeight":"36px","letterSpacing":"-0.01em","fontWeight":"600"}],"body-lg":["16px",{"lineHeight":"24px","letterSpacing":"0em","fontWeight":"400"}],"body-sm":["13px",{"lineHeight":"18px","letterSpacing":"0em","fontWeight":"400"}],"headline-md":["20px",{"lineHeight":"28px","letterSpacing":"-0.01em","fontWeight":"600"}],"label-md":["13px",{"lineHeight":"18px","letterSpacing":"0.01em","fontWeight":"500"}]}}}};</script></head><body class="bg-surface font-body-md text-body-md text-on-surface antialiased"><header class="fixed top-0 left-0 right-0 h-16 bg-surface-container-lowest shadow-[0_1px_8px_rgba(0,0,0,0.04)] z-50"><div class="h-16 w-full px-gutter flex items-center justify-between"><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-sm"><div class="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[20px]">neurology</span></div><span class="font-headline-sm text-headline-sm text-primary tracking-tight font-semibold">MIMIR</span></div><div class="h-4 w-px bg-outline-variant"></div><div class="flex items-center gap-space-xs px-space-sm py-space-xs bg-surface-container-low rounded-lg"><span class="material-symbols-outlined text-on-surface-variant text-[16px]">folder_supervised</span><span class="font-label-md text-label-md text-on-surface">Core Project Workspace</span><span class="material-symbols-outlined text-on-surface-variant text-[16px]">unfold_more</span></div></div><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs px-space-sm py-space-xs bg-secondary-container/40 rounded-full"><span class="w-2 h-2 rounded-full bg-secondary animate-pulse"></span><span class="font-label-sm text-label-sm text-on-secondary-container font-medium">Copilot Connected Successfully</span></div><nav class="hidden lg:flex items-center gap-space-md" data-active-classes="text-primary font-semibold"><a class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors" data-path="assistant-matrix" href="#">Matrix</a><a class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors" data-path="knowledge-vault" href="#">Knowledge Vault</a><a class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors" data-path="habit-orchestration" href="#">Habits</a><a class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors" data-path="audit-history" href="#">Audit Logs</a></nav><div class="flex items-center gap-space-sm pl-space-sm"><button aria-label="Help &amp; Documentation" class="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" type="button"><span class="material-symbols-outlined text-[20px]">help_outline</span></button><button aria-label="Settings" class="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" type="button"><span class="material-symbols-outlined text-[20px]">settings</span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></div></header><aside class="fixed left-0 top-16 bottom-0 w-64 bg-surface-container-low shadow-[0_1px_8px_rgba(0,0,0,0.04)] z-40 flex flex-col justify-between p-space-md overflow-y-auto"><div class="flex flex-col gap-space-md"><div class="flex items-center justify-between pb-space-xs"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-primary text-[18px]">grid_view</span><span class="font-label-sm text-label-sm uppercase tracking-wider text-on-surface-variant font-semibold">The Intention Matrix</span></div><span class="material-symbols-outlined text-on-surface-variant text-[18px] cursor-pointer hover:text-on-surface">dock_to_left</span></div><div class="p-space-sm bg-surface-container-lowest rounded-xl shadow-[0_1px_4px_rgba(0,0,0,0.03)]"><div class="flex items-center justify-between mb-space-xs"><span class="font-caption text-caption uppercase text-on-surface-variant font-semibold">Active Session</span><span class="w-2 h-2 rounded-full bg-secondary"></span></div><p class="font-headline-sm text-headline-sm text-on-surface">Enterprise Risk Scope</p><p class="font-caption text-caption text-on-surface-variant mt-space-xs">Model: MIMIR Governance v4.2</p></div><div class="flex flex-col gap-space-xs"><span class="font-caption text-caption uppercase text-on-surface-variant px-space-xs font-semibold">Navigation</span><nav class="flex flex-col gap-space-xs" data-active-classes="bg-primary-container text-on-primary-container font-semibold"><a class="flex items-center gap-space-sm px-space-sm py-space-xs rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="assistant-matrix" href="#"><span class="material-symbols-outlined text-[18px]">dashboard</span><span class="font-label-md text-label-md">Intention Matrix</span></a><a class="flex items-center gap-space-sm px-space-sm py-space-xs rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="knowledge-vault" href="#"><span class="material-symbols-outlined text-[18px]">database</span><span class="font-label-md text-label-md">Knowledge Vault</span></a><a class="flex items-center gap-space-sm px-space-sm py-space-xs rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="habit-orchestration" href="#"><span class="material-symbols-outlined text-[18px]">tune</span><span class="font-label-md text-label-md">Assisting Habits</span></a><a class="flex items-center gap-space-sm px-space-sm py-space-xs rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="audit-history" href="#"><span class="material-symbols-outlined text-[18px]">history_edu</span><span class="font-label-md text-label-md">Audit Trace</span></a></nav></div><div class="flex flex-col gap-space-sm pt-space-xs"><span class="font-caption text-caption uppercase text-on-surface-variant px-space-xs font-semibold">Assisting Habits</span><div class="flex flex-col gap-space-xs"><div class="flex items-center justify-between p-space-xs rounded-lg bg-surface-container-lowest"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-secondary text-[16px]">verified_user</span><span class="font-body-sm text-body-sm text-on-surface">Safe Guardrails</span></div><input aria-label="Safe Guardrails toggle" checked="" class="accent-primary cursor-pointer" type="checkbox"/></div><div class="flex items-center justify-between p-space-xs rounded-lg bg-surface-container-lowest"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-primary text-[16px]">auto_awesome</span><span class="font-body-sm text-body-sm text-on-surface">Auto-Refine</span></div><input aria-label="Auto-Refine toggle" checked="" class="accent-primary cursor-pointer" type="checkbox"/></div><div class="flex items-center justify-between p-space-xs rounded-lg bg-surface-container-lowest"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-outline text-[16px]">visibility_lock</span><span class="font-body-sm text-body-sm text-on-surface">PII Redaction</span></div><input aria-label="PII Redaction toggle" class="accent-primary cursor-pointer" type="checkbox"/></div></div></div></div><div class="pt-space-md border-t border-outline-variant/30 flex items-center justify-between text-on-surface-variant"><div class="flex items-center gap-space-xs"><span class="material-symbols-outlined text-[16px]">shield</span><span class="font-caption text-caption">Compliance Tier 1</span></div><span class="font-caption text-caption font-semibold">v2.8.4</span></div></aside><div class="pl-64"><main class="relative pt-16 bg-surface min-h-screen w-full px-gutter py-space-xl"><div class="flex flex-col w-full">
+<!-- Interactive Script for Filtering & Habits State Management -->
+<script>
+    function switchHabitCategory(btn, category) {
+      document.querySelectorAll('.filter-chip').forEach(el => {
+        el.classList.remove('bg-primary', 'text-on-primary', 'shadow-sm');
+        el.classList.add('bg-surface-container', 'text-on-surface-variant');
+      });
+      btn.classList.add('bg-primary', 'text-on-primary', 'shadow-sm');
+      btn.classList.remove('bg-surface-container', 'text-on-surface-variant');
+
+      const cards = document.querySelectorAll('.habit-card');
+      cards.forEach(card => {
+        if (category === 'all' || card.dataset.category === category) {
+          card.style.display = 'flex';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    }
+
+    function toggleHabit(cardId, toggleElement) {
+      const card = document.getElementById(cardId);
+      const isChecked = toggleElement.checked;
+      const statusPill = card.querySelector('.status-indicator');
+      const accentStrip = card.querySelector('.status-strip');
+      const actionBtn = card.querySelector('.action-btn');
+
+      if (isChecked) {
+        card.classList.remove('opacity-75');
+        statusPill.textContent = 'Active Guard';
+        statusPill.className = 'status-indicator px-space-sm py-0.5 rounded-full font-label-sm text-label-sm bg-secondary/15 text-secondary font-semibold';
+        if (accentStrip) accentStrip.className = 'status-strip w-1.5 self-stretch bg-secondary rounded-l-xl';
+        if (actionBtn) {
+          actionBtn.textContent = 'Configured';
+          actionBtn.className = 'action-btn font-label-md text-label-md px-space-md py-1.5 rounded-lg bg-surface-container text-on-surface hover:bg-surface-container-high transition-colors';
+        }
+      } else {
+        card.classList.add('opacity-75');
+        statusPill.textContent = 'Dormant';
+        statusPill.className = 'status-indicator px-space-sm py-0.5 rounded-full font-label-sm text-label-sm bg-surface-container-high text-on-surface-variant font-semibold';
+        if (accentStrip) accentStrip.className = 'status-strip w-1.5 self-stretch bg-outline-variant rounded-l-xl';
+        if (actionBtn) {
+          actionBtn.textContent = 'Enable Habit';
+          actionBtn.className = 'action-btn font-label-md text-label-md px-space-md py-1.5 rounded-lg bg-primary text-on-primary hover:bg-primary-container transition-colors shadow-sm';
+        }
+      }
+      updateActiveSummary();
+    }
+
+    function updateActiveSummary() {
+      const activeCount = document.querySelectorAll('.habit-toggle:checked').length;
+      const totalCount = document.querySelectorAll('.habit-toggle').length;
+      const counterText = document.getElementById('active-summary-text');
+      if (counterText) {
+        counterText.textContent = `${activeCount} of ${totalCount} Habits Active • Workspace Shield Operating at Peak Reliability`;
+      }
+    }
+  </script>
+<!-- Top Hero Header & Behavioral Control Banner -->
+<section class="flex flex-col gap-space-md pb-space-lg">
+<div class="flex flex-col lg:flex-row lg:items-center justify-between gap-space-md">
+<div class="flex flex-col gap-space-xs">
+<div class="flex items-center gap-space-sm">
+<span class="px-space-sm py-0.5 rounded-full font-caption text-caption uppercase tracking-wider bg-primary-fixed text-on-primary-fixed font-semibold">
+            User-Configurable Behavioral Rules
+          </span>
+<span class="flex items-center gap-1 font-caption text-caption text-secondary font-semibold">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+            Real-Time Engine Sync
+          </span>
+</div>
+<h1 class="font-headline-lg text-headline-lg text-on-surface font-semibold tracking-tight">
+          Assisting Habits &amp; Automated Safeguards
+        </h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant max-w-4xl">
+          Fine-tune how MIMIR monitors your work, suggests proactive fixes, and protects customer experience without technical jargon.
+        </p>
+</div>
+<!-- Quick Metrics Telemetry Card -->
+<div class="flex items-center gap-space-md bg-surface-container-lowest p-space-md rounded-xl shadow-sm self-start lg:self-auto">
+<div class="flex flex-col pr-space-md border-r-0">
+<span class="font-caption text-caption uppercase text-on-surface-variant font-semibold">Defended Events</span>
+<div class="flex items-baseline gap-space-xs mt-0.5">
+<span class="font-headline-md text-headline-md text-primary font-semibold">14,291</span>
+<span class="font-caption text-caption text-secondary font-semibold">↑ 18%</span>
+</div>
+<span class="font-caption text-caption text-on-surface-variant">Last 30 rolling days</span>
+</div>
+<div class="h-10 w-px bg-surface-container"></div>
+<div class="flex flex-col pl-space-xs">
+<span class="font-caption text-caption uppercase text-on-surface-variant font-semibold">Intervention Rate</span>
+<div class="flex items-baseline gap-space-xs mt-0.5">
+<span class="font-headline-md text-headline-md text-secondary font-semibold">99.98%</span>
+<span class="font-caption text-caption text-on-surface-variant">Clean</span>
+</div>
+<span class="font-caption text-caption text-on-surface-variant">Zero uncaught crashes</span>
+</div>
+</div>
+</div>
+<!-- Search & Filter Ribbon -->
+<div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-space-md pt-space-xs">
+<!-- Filter Chips -->
+<div aria-label="Habit Categories" class="flex items-center gap-space-xs overflow-x-auto pb-1 sm:pb-0" role="tablist">
+<button class="filter-chip px-space-md py-1.5 rounded-full font-label-md text-label-md bg-primary text-on-primary shadow-sm whitespace-nowrap transition-colors" onclick="switchHabitCategory(this, 'all')" type="button">
+          All Safeguards (5)
+        </button>
+<button class="filter-chip px-space-md py-1.5 rounded-full font-label-md text-label-md bg-surface-container text-on-surface-variant hover:bg-surface-container-high transition-colors whitespace-nowrap" onclick="switchHabitCategory(this, 'reliability')" type="button">
+          Reliability (1)
+        </button>
+<button class="filter-chip px-space-md py-1.5 rounded-full font-label-md text-label-md bg-surface-container text-on-surface-variant hover:bg-surface-container-high transition-colors whitespace-nowrap" onclick="switchHabitCategory(this, 'safety')" type="button">
+          Safety &amp; Isolation (1)
+        </button>
+<button class="filter-chip px-space-md py-1.5 rounded-full font-label-md text-label-md bg-surface-container text-on-surface-variant hover:bg-surface-container-high transition-colors whitespace-nowrap" onclick="switchHabitCategory(this, 'formatting')" type="button">
+          Formatting &amp; Tone (1)
+        </button>
+<button class="filter-chip px-space-md py-1.5 rounded-full font-label-md text-label-md bg-surface-container text-on-surface-variant hover:bg-surface-container-high transition-colors whitespace-nowrap" onclick="switchHabitCategory(this, 'privacy')" type="button">
+          Privacy &amp; Redaction (1)
+        </button>
+</div>
+<!-- Search Input Container -->
+<div class="relative min-w-[280px]">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">search</span>
+<input aria-label="Filter assisting habits by keyword" class="w-full pl-9 pr-space-md py-1.5 bg-surface-container-lowest rounded-lg font-body-sm text-body-sm text-on-surface placeholder:text-outline focus:outline-none focus:bg-surface-container-low transition-colors shadow-sm" placeholder="Filter habits or trigger keywords..." type="text"/>
+</div>
+</div>
+</section>
+<!-- Interactive Habits Grid -->
+<section class="flex flex-col gap-space-md">
+<!-- Habit Card 1: Network Timeouts & Reliability -->
+<article class="habit-card flex flex-col md:flex-row bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden transition-all duration-200" data-category="reliability" id="habit-network">
+<div class="status-strip w-1.5 self-stretch bg-secondary rounded-l-xl"></div>
+<div class="flex-1 p-space-lg flex flex-col justify-between gap-space-md">
+<div class="flex flex-col md:flex-row md:items-start justify-between gap-space-md">
+<div class="flex items-start gap-space-md">
+<div class="w-12 h-12 rounded-xl bg-surface-container-low flex items-center justify-center text-primary shrink-0">
+<span class="material-symbols-outlined text-[28px]">wifi_protected_setup</span>
+</div>
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-space-xs flex-wrap">
+<span class="status-indicator px-space-sm py-0.5 rounded-full font-label-sm text-label-sm bg-secondary/15 text-secondary font-semibold">Active Guard</span>
+<span class="px-space-sm py-0.5 rounded-full font-caption text-caption bg-surface-container text-on-surface-variant">Reliability Engine</span>
+<span class="font-caption text-caption text-on-surface-variant">Trigger: External HTTP / RPC</span>
+</div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-semibold pt-1">
+                Auto-Catch Crashing Network Errors
+              </h2>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-3xl">
+                Automatically wraps external partner API calls in defensive 5-second timeouts with polite fallback customer messaging.
+              </p>
+</div>
+</div>
+<!-- Master Habit Toggle -->
+<div class="flex items-center gap-space-sm self-end md:self-start bg-surface-container-low px-space-md py-space-xs rounded-xl">
+<span class="font-label-sm text-label-sm text-on-surface font-semibold">Safeguard State</span>
+<label class="relative inline-flex items-center cursor-pointer">
+<input aria-label="Toggle Auto-Catch Crashing Network Errors" checked="" class="habit-toggle sr-only peer" onchange="toggleHabit('habit-network', this)" type="checkbox"/>
+<div class="w-11 h-6 bg-surface-container-high peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-surface-container-lowest after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-surface-container-lowest after:border-surface-container-high after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-secondary"></div>
+</label>
+</div>
+</div>
+<!-- Impact Bar & Operational Controls Strip -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-space-md pt-space-md bg-surface-container-low/60 p-space-md rounded-lg">
+<!-- Impact Callout -->
+<div class="flex flex-col gap-1">
+<span class="font-caption text-caption uppercase text-on-surface-variant font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-secondary text-[16px]">verified</span>
+              Business Impact
+            </span>
+<p class="font-body-sm text-body-sm text-on-surface font-semibold">
+              Prevents checkout freezes &amp; runaway client loading loops
+            </p>
+</div>
+<!-- Parameter Slider -->
+<div class="flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<label class="font-caption text-caption uppercase text-on-surface-variant font-semibold" for="network-timeout">
+                Timeout Threshold
+              </label>
+<span class="font-label-sm text-label-sm text-primary font-semibold">Strict (5s)</span>
+</div>
+<input class="w-full accent-primary h-1.5 bg-surface-container-high rounded-lg cursor-pointer mt-1" id="network-timeout" max="15" min="1" type="range" value="5"/>
+<span class="font-caption text-caption text-on-surface-variant">Recommended for high-conversion carts</span>
+</div>
+<!-- Subordinate Habits Switches -->
+<div class="flex flex-col gap-space-xs justify-center">
+<label class="flex items-center gap-space-xs cursor-pointer">
+<input checked="" class="w-4 h-4 rounded text-primary focus:ring-0 accent-primary cursor-pointer" type="checkbox"/>
+<span class="font-body-sm text-body-sm text-on-surface">Auto-refine retry backoff schedule</span>
+</label>
+<label class="flex items-center gap-space-xs cursor-pointer">
+<input checked="" class="w-4 h-4 rounded text-primary focus:ring-0 accent-primary cursor-pointer" type="checkbox"/>
+<span class="font-body-sm text-body-sm text-on-surface">Show friendly inline alert badge</span>
+</label>
+</div>
+</div>
+</div>
+</article>
+<!-- Habit Card 2: AST Isolation & Sandboxing -->
+<article class="habit-card flex flex-col md:flex-row bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden transition-all duration-200" data-category="safety" id="habit-sandbox">
+<div class="status-strip w-1.5 self-stretch bg-secondary rounded-l-xl"></div>
+<div class="flex-1 p-space-lg flex flex-col justify-between gap-space-md">
+<div class="flex flex-col md:flex-row md:items-start justify-between gap-space-md">
+<div class="flex items-start gap-space-md">
+<div class="w-12 h-12 rounded-xl bg-surface-container-low flex items-center justify-center text-primary shrink-0">
+<span class="material-symbols-outlined text-[28px]">shield_lock</span>
+</div>
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-space-xs flex-wrap">
+<span class="status-indicator px-space-sm py-0.5 rounded-full font-label-sm text-label-sm bg-secondary/15 text-secondary font-semibold">Active Guard</span>
+<span class="px-space-sm py-0.5 rounded-full font-caption text-caption bg-surface-container text-on-surface-variant">Safety &amp; Compliance</span>
+<span class="font-caption text-caption text-on-surface-variant">Isolation: Pure Memory Sandbox</span>
+</div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-semibold pt-1">
+                Safe Guardrails &amp; AST Isolation
+              </h2>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-3xl">
+                Ensures proposed updates are simulated safely in memory with deterministic single-file diff previews before writing to disk.
+              </p>
+</div>
+</div>
+<!-- Master Habit Toggle -->
+<div class="flex items-center gap-space-sm self-end md:self-start bg-surface-container-low px-space-md py-space-xs rounded-xl">
+<span class="font-label-sm text-label-sm text-on-surface font-semibold">Safeguard State</span>
+<label class="relative inline-flex items-center cursor-pointer">
+<input aria-label="Toggle Safe Guardrails and AST Isolation" checked="" class="habit-toggle sr-only peer" onchange="toggleHabit('habit-sandbox', this)" type="checkbox"/>
+<div class="w-11 h-6 bg-surface-container-high peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-surface-container-lowest after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-surface-container-lowest after:border-surface-container-high after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-secondary"></div>
+</label>
+</div>
+</div>
+<!-- Impact Bar & Operational Controls Strip -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-space-md pt-space-md bg-surface-container-low/60 p-space-md rounded-lg">
+<!-- Impact Callout -->
+<div class="flex flex-col gap-1">
+<span class="font-caption text-caption uppercase text-on-surface-variant font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-secondary text-[16px]">check_circle</span>
+              Guaranteed Outcome
+            </span>
+<p class="font-body-sm text-body-sm text-on-surface font-semibold">
+              100% reversible, zero corrupt project files on disk
+            </p>
+</div>
+<!-- Parameter Select Dropdown -->
+<div class="flex flex-col gap-1">
+<label class="font-caption text-caption uppercase text-on-surface-variant font-semibold" for="rollback-retention">
+              Rollback Retention Policy
+            </label>
+<div class="relative mt-1">
+<select class="w-full appearance-none bg-surface-container-lowest font-body-sm text-body-sm text-on-surface px-space-sm py-1.5 rounded-lg shadow-sm focus:outline-none cursor-pointer" id="rollback-retention">
+<option selected="">Always keep snapshot (Recommended)</option>
+<option>Discard on confirmed git commit</option>
+<option>Retain 7 days audit history</option>
+</select>
+<span class="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none text-[16px]">expand_more</span>
+</div>
+<span class="font-caption text-caption text-on-surface-variant">Instant one-click rollback ready</span>
+</div>
+<!-- Verification Metrics -->
+<div class="flex items-center gap-space-md">
+<div class="flex flex-col">
+<span class="font-caption text-caption uppercase text-on-surface-variant font-semibold">Memory AST Overhead</span>
+<span class="font-label-md text-label-md text-primary font-semibold">&lt; 14 MB Peak</span>
+<span class="font-caption text-caption text-secondary">Zero latency overhead</span>
+</div>
+<div class="h-8 w-px bg-surface-container"></div>
+<div class="flex flex-col">
+<span class="font-caption text-caption uppercase text-on-surface-variant font-semibold">Integrity Verified</span>
+<span class="font-label-md text-label-md text-secondary font-semibold">SHA-256 Validated</span>
+<span class="font-caption text-caption text-on-surface-variant">Cryptographically signed</span>
+</div>
+</div>
+</div>
+</div>
+</article>
+<!-- Habit Card 3: Plain-English Change Explanations -->
+<article class="habit-card flex flex-col md:flex-row bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden transition-all duration-200" data-category="formatting" id="habit-explain">
+<div class="status-strip w-1.5 self-stretch bg-secondary rounded-l-xl"></div>
+<div class="flex-1 p-space-lg flex flex-col justify-between gap-space-md">
+<div class="flex flex-col md:flex-row md:items-start justify-between gap-space-md">
+<div class="flex items-start gap-space-md">
+<div class="w-12 h-12 rounded-xl bg-surface-container-low flex items-center justify-center text-primary shrink-0">
+<span class="material-symbols-outlined text-[28px]">chat_bubble_outline</span>
+</div>
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-space-xs flex-wrap">
+<span class="status-indicator px-space-sm py-0.5 rounded-full font-label-sm text-label-sm bg-secondary/15 text-secondary font-semibold">Active Guard</span>
+<span class="px-space-sm py-0.5 rounded-full font-caption text-caption bg-surface-container text-on-surface-variant">Formatting &amp; Governance</span>
+<span class="font-caption text-caption text-on-surface-variant">Audience: Non-Technical Executives</span>
+</div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-semibold pt-1">
+                Plain-English Change Explanations
+              </h2>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-3xl">
+                Translates complex code and syntax modifications into plain business summaries for non-technical stakeholders.
+              </p>
+</div>
+</div>
+<!-- Master Habit Toggle -->
+<div class="flex items-center gap-space-sm self-end md:self-start bg-surface-container-low px-space-md py-space-xs rounded-xl">
+<span class="font-label-sm text-label-sm text-on-surface font-semibold">Safeguard State</span>
+<label class="relative inline-flex items-center cursor-pointer">
+<input aria-label="Toggle Plain-English Change Explanations" checked="" class="habit-toggle sr-only peer" onchange="toggleHabit('habit-explain', this)" type="checkbox"/>
+<div class="w-11 h-6 bg-surface-container-high peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-surface-container-lowest after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-surface-container-lowest after:border-surface-container-high after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-secondary"></div>
+</label>
+</div>
+</div>
+<!-- Impact Bar & Operational Controls Strip -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-space-md pt-space-md bg-surface-container-low/60 p-space-md rounded-lg">
+<!-- Impact Callout -->
+<div class="flex flex-col gap-1">
+<span class="font-caption text-caption uppercase text-on-surface-variant font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-secondary text-[16px]">record_voice_over</span>
+              Team Velocity Impact
+            </span>
+<p class="font-body-sm text-body-sm text-on-surface font-semibold">
+              Instant executive review without reading code diffs
+            </p>
+</div>
+<!-- Parameter Select Dropdown -->
+<div class="flex flex-col gap-1">
+<label class="font-caption text-caption uppercase text-on-surface-variant font-semibold" for="explanation-tone">
+              Explanation Tone Profile
+            </label>
+<div class="relative mt-1">
+<select class="w-full appearance-none bg-surface-container-lowest font-body-sm text-body-sm text-on-surface px-space-sm py-1.5 rounded-lg shadow-sm focus:outline-none cursor-pointer" id="explanation-tone">
+<option selected="">Warm &amp; Professional (Executive-friendly)</option>
+<option>Crisp Executive Bullet Points</option>
+<option>Detailed QA &amp; Risk Focused</option>
+<option>Conversational Casual</option>
+</select>
+<span class="material-symbols-outlined absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none text-[16px]">expand_more</span>
+</div>
+<span class="font-caption text-caption text-on-surface-variant">Includes before-and-after business metrics</span>
+</div>
+<!-- Sample Live Preview Mini Pill -->
+<div class="flex flex-col justify-center bg-surface-container-lowest p-space-sm rounded-lg shadow-sm">
+<span class="font-caption text-caption uppercase text-outline font-semibold">Preview Example Output</span>
+<p class="font-body-sm text-body-sm text-on-surface-variant italic truncate mt-0.5">
+              “Simplified customer billing step so checkout completes 1.4s faster.”
+            </p>
+</div>
+</div>
+</div>
+</article>
+<!-- Habit Card 4: PII & Customer Privacy Redaction -->
+<article class="habit-card flex flex-col md:flex-row bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden transition-all duration-200" data-category="privacy" id="habit-privacy">
+<div class="status-strip w-1.5 self-stretch bg-secondary rounded-l-xl"></div>
+<div class="flex-1 p-space-lg flex flex-col justify-between gap-space-md">
+<div class="flex flex-col md:flex-row md:items-start justify-between gap-space-md">
+<div class="flex items-start gap-space-md">
+<div class="w-12 h-12 rounded-xl bg-surface-container-low flex items-center justify-center text-primary shrink-0">
+<span class="material-symbols-outlined text-[28px]">lock</span>
+</div>
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-space-xs flex-wrap">
+<span class="status-indicator px-space-sm py-0.5 rounded-full font-label-sm text-label-sm bg-secondary/15 text-secondary font-semibold">Active Guard</span>
+<span class="px-space-sm py-0.5 rounded-full font-caption text-caption bg-surface-container text-on-surface-variant">Privacy &amp; Security</span>
+<span class="font-caption text-caption text-on-surface-variant">Compliance: Strict Tier-1</span>
+</div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-semibold pt-1">
+                PII &amp; Customer Privacy Redaction
+              </h2>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-3xl">
+                Scans all file payloads and variable names to redact credit cards, phone numbers, and customer emails.
+              </p>
+</div>
+</div>
+<!-- Master Habit Toggle -->
+<div class="flex items-center gap-space-sm self-end md:self-start bg-surface-container-low px-space-md py-space-xs rounded-xl">
+<span class="font-label-sm text-label-sm text-on-surface font-semibold">Safeguard State</span>
+<label class="relative inline-flex items-center cursor-pointer">
+<input aria-label="Toggle PII and Customer Privacy Redaction" checked="" class="habit-toggle sr-only peer" onchange="toggleHabit('habit-privacy', this)" type="checkbox"/>
+<div class="w-11 h-6 bg-surface-container-high peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-surface-container-lowest after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-surface-container-lowest after:border-surface-container-high after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-secondary"></div>
+</label>
+</div>
+</div>
+<!-- Impact Bar & Operational Controls Strip -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-space-md pt-space-md bg-surface-container-low/60 p-space-md rounded-lg">
+<!-- Impact Callout -->
+<div class="flex flex-col gap-1">
+<span class="font-caption text-caption uppercase text-on-surface-variant font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-secondary text-[16px]">enhanced_encryption</span>
+              Statutory Compliance
+            </span>
+<p class="font-body-sm text-body-sm text-on-surface font-semibold">
+              SOC-2, HIPAA &amp; GDPR Article 32 strict adherence
+            </p>
+</div>
+<!-- Audit Logging State -->
+<div class="flex flex-col gap-1">
+<div class="flex items-center justify-between">
+<span class="font-caption text-caption uppercase text-on-surface-variant font-semibold">Audit Trail Logging</span>
+<span class="px-space-sm py-0.5 rounded-full font-caption text-caption bg-secondary-container text-on-secondary-container font-semibold">Enabled</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface mt-1">
+              Writes immutable hash to tamper-proof internal ledger
+            </p>
+<span class="font-caption text-caption text-on-surface-variant">Last verified checksum: #0928-AD7</span>
+</div>
+<!-- Specific Token Patterns Handled -->
+<div class="flex flex-col gap-1">
+<span class="font-caption text-caption uppercase text-on-surface-variant font-semibold">Monitored Tokens</span>
+<div class="flex flex-wrap gap-1 mt-1">
+<span class="px-space-xs py-0.5 rounded bg-surface-container font-caption text-caption text-on-surface">PAN / Cards</span>
+<span class="px-space-xs py-0.5 rounded bg-surface-container font-caption text-caption text-on-surface">E.164 Phones</span>
+<span class="px-space-xs py-0.5 rounded bg-surface-container font-caption text-caption text-on-surface">RFC-5322 Emails</span>
+<span class="px-space-xs py-0.5 rounded bg-surface-container font-caption text-caption text-on-surface">Govt IDs</span>
+</div>
+</div>
+</div>
+</div>
+</article>
+<!-- Habit Card 5: Inactive Standard (Form Validation) -->
+<article class="habit-card opacity-75 flex flex-col md:flex-row bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden transition-all duration-200" data-category="formatting" id="habit-forms">
+<div class="status-strip w-1.5 self-stretch bg-outline-variant rounded-l-xl"></div>
+<div class="flex-1 p-space-lg flex flex-col justify-between gap-space-md">
+<div class="flex flex-col md:flex-row md:items-start justify-between gap-space-md">
+<div class="flex items-start gap-space-md">
+<div class="w-12 h-12 rounded-xl bg-surface-container-low flex items-center justify-center text-outline shrink-0">
+<span class="material-symbols-outlined text-[28px]">rule</span>
+</div>
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-space-xs flex-wrap">
+<span class="status-indicator px-space-sm py-0.5 rounded-full font-label-sm text-label-sm bg-surface-container-high text-on-surface-variant font-semibold">Dormant</span>
+<span class="px-space-sm py-0.5 rounded-full font-caption text-caption bg-surface-container text-on-surface-variant">UI / Accessibility</span>
+<span class="font-caption text-caption text-outline">Available for activation</span>
+</div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-semibold pt-1">
+                Automated Form Validation Standards
+              </h2>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-3xl">
+                Enforces clean visual error hints and accessible inline field validation for web customer input forms.
+              </p>
+</div>
+</div>
+<!-- Master Habit Toggle & Activation Trigger -->
+<div class="flex items-center gap-space-sm self-end md:self-start bg-surface-container-low px-space-md py-space-xs rounded-xl">
+<span class="font-label-sm text-label-sm text-on-surface font-semibold">Safeguard State</span>
+<label class="relative inline-flex items-center cursor-pointer">
+<input aria-label="Toggle Automated Form Validation Standards" class="habit-toggle sr-only peer" onchange="toggleHabit('habit-forms', this)" type="checkbox"/>
+<div class="w-11 h-6 bg-surface-container-high peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-surface-container-lowest after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-surface-container-lowest after:border-surface-container-high after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-secondary"></div>
+</label>
+</div>
+</div>
+<!-- Impact Bar & Operational Controls Strip -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-space-md pt-space-md bg-surface-container-low/60 p-space-md rounded-lg">
+<!-- Impact Callout -->
+<div class="flex flex-col gap-1">
+<span class="font-caption text-caption uppercase text-on-surface-variant font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-outline text-[16px]">accessibility_new</span>
+              Usability Metric
+            </span>
+<p class="font-body-sm text-body-sm text-on-surface">
+              WCAG 2.1 AA Compliance with instant live field feedback
+            </p>
+</div>
+<!-- Quick Enforce Mode -->
+<div class="flex flex-col gap-1">
+<span class="font-caption text-caption uppercase text-on-surface-variant font-semibold">Enforcement Mode</span>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+              Soft suggestions on blur • Non-blocking alerts
+            </p>
+<span class="font-caption text-caption text-on-surface-variant">Does not interrupt user submission</span>
+</div>
+<!-- Inline Action Button -->
+<div class="flex items-center justify-start md:justify-end">
+<button class="action-btn font-label-md text-label-md px-space-md py-1.5 rounded-lg bg-primary text-on-primary hover:bg-primary-container transition-colors shadow-sm" onclick="const toggle = document.querySelector('#habit-forms .habit-toggle'); toggle.checked = true; toggleHabit('habit-forms', toggle);" type="button">
+              Enable Habit
+            </button>
+</div>
+</div>
+</div>
+</article>
+</section>
+<!-- Bottom Summary & Sticky Control Dock -->
+<footer class="pt-space-xl">
+<div class="flex flex-col sm:flex-row items-center justify-between gap-space-md bg-surface-container-lowest p-space-md rounded-xl shadow-sm">
+<div class="flex items-center gap-space-md">
+<div class="w-10 h-10 rounded-lg bg-secondary/15 flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-[24px]">verified_user</span>
+</div>
+<div class="flex flex-col">
+<span class="font-headline-sm text-headline-sm text-on-surface font-semibold" id="active-summary-text">
+            4 of 5 Habits Active • Workspace Shield Operating at Peak Reliability
+          </span>
+<span class="font-caption text-caption text-on-surface-variant">
+            Last policy evaluation completed 3 minutes ago • Engine v4.2.0-Safe
+          </span>
+</div>
+</div>
+<!-- Action Buttons -->
+<div class="flex items-center gap-space-sm w-full sm:w-auto justify-end">
+<button class="font-label-md text-label-md px-space-md py-2 rounded-lg bg-surface-container text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors" onclick="location.reload()" type="button">
+          Reset to Recommended Safe Defaults
+        </button>
+<button class="font-label-md text-label-md px-space-lg py-2 rounded-lg bg-primary text-on-primary hover:bg-primary-container transition-colors shadow-sm flex items-center gap-space-xs font-semibold" onclick="const btn = this; const orig = btn.innerText; btn.innerText = 'Saved Successfully!'; btn.classList.add('bg-secondary'); setTimeout(() =&gt; { btn.innerText = orig; btn.classList.remove('bg-secondary'); }, 1800);" type="button">
+<span class="material-symbols-outlined text-[18px]">save</span>
+          Save Habit Preferences
+        </button>
+</div>
+</div>
+</footer>
+</div></main></div></body></html>

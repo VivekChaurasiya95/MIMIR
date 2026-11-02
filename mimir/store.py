@@ -392,6 +392,71 @@ class PrincipleStore:
         except sqlite3.Error as exc:
             raise StoreError(f"update failed for {principle_id!r}: {exc}") from None
 
+    def get(self, principle_id: str) -> BehavioralPrinciple:
+        """Return one principle by id (Review & Calibration Deck).
+
+        Raises :class:`PrincipleNotFoundError` when absent.
+        """
+        principle_id = check_str(principle_id, field="principle_id")
+        try:
+            row = self._conn.execute(
+                "SELECT principle_json FROM principles WHERE id = ?",
+                (principle_id,),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise StoreError(f"lookup failed for {principle_id!r}: {exc}") from None
+        if row is None:
+            raise PrincipleNotFoundError(
+                f"unknown principle id: {principle_id!r}"
+            )
+        return BehavioralPrinciple.from_dict(json.loads(row[0]))
+
+    def set_confidence(
+        self, principle_id: str, value: float, new_evidence_id: str
+    ) -> None:
+        """Set absolute confidence for one principle (human calibration).
+
+        Unlike :meth:`update_confidence` (Bayesian evidence with count
+        bookkeeping), this is a direct judgment: only the score, the
+        evidence trace (appended once), and ``last_validated`` change —
+        the supporting/contradiction counts stay untouched. ``value``
+        must lie within [0, 1].
+        """
+        principle_id = check_str(principle_id, field="principle_id")
+        value = check_float(value, field="value")
+        new_evidence_id = check_str(new_evidence_id, field="new_evidence_id")
+        try:
+            row = self._conn.execute(
+                "SELECT principle_json FROM principles WHERE id = ?",
+                (principle_id,),
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise StoreError(f"update failed for {principle_id!r}: {exc}") from None
+        if row is None:
+            raise PrincipleNotFoundError(
+                f"unknown principle id: {principle_id!r}"
+            )
+        data = json.loads(row[0])
+        status = data["epistemic_status"]
+        status["confidence_score"] = float(value)
+        status["last_validated"] = utc_now_iso()
+        if new_evidence_id not in data["inspectable_traces"]:
+            data["inspectable_traces"].append(new_evidence_id)
+        updated = BehavioralPrinciple.from_dict(data)  # revalidate contract
+        try:
+            self._conn.execute(
+                "UPDATE principles SET principle_json = ?, confidence = ?"
+                " WHERE id = ?",
+                (
+                    json.dumps(updated.to_dict()),
+                    updated.epistemic_status.confidence_score,
+                    principle_id,
+                ),
+            )
+            self._conn.commit()
+        except sqlite3.Error as exc:
+            raise StoreError(f"update failed for {principle_id!r}: {exc}") from None
+
     def list_all(self) -> list[BehavioralPrinciple]:
         """Return every stored principle, ordered by id (deterministic)."""
         try:

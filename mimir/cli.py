@@ -6,6 +6,7 @@ Subcommands (``python -m mimir.cli <cmd>``):
 - ``watch``: passive Git observation, printing new episodes as they land.
 - ``inspect``: print the principles stored in behavioral memory.
 - ``replicate``: offline persona-aligned synthesis for a novel task.
+- ``doctor``: Phase 0 health check (mic, Whisper, ffmpeg, Ollama, storage).
 
 ``main()`` returns process exit codes and prints to stdout; hardware
 failures surface as clear errors with nonzero codes, never tracebacks.
@@ -23,6 +24,7 @@ from typing import Any, Optional, Sequence
 from .actions import VOICE_GRANTED_PERMISSIONS, ActionRegistry
 from .actor import ReplicationActor, ReplicationRequest
 from .actuator import DesktopActuator
+from .doctor import run_doctor
 from .events import EventType, get_event_bus
 from .safety import SafetyController
 from .store import PrincipleStore
@@ -79,6 +81,11 @@ def build_parser() -> argparse.ArgumentParser:
     repl.add_argument("--top-k", type=_positive_int, default=5)
     repl.add_argument("--no-baseline", action="store_true")
     repl.set_defaults(func=_run_replicate)
+
+    doctor = sub.add_parser("doctor", help="check mic/whisper/ffmpeg/ollama/storage")
+    doctor.add_argument("--store", default=_DEFAULT_STORE)
+    doctor.add_argument("--endpoint", default="http://127.0.0.1:11434")
+    doctor.set_defaults(func=_run_doctor)
     return parser
 
 
@@ -391,6 +398,14 @@ def _run_replicate(args: argparse.Namespace) -> int:
     if result.contrast_baseline is None:
         print("(no contrast baseline: no LLM configured or --no-baseline)")
     return 0
+
+
+def _run_doctor(args: argparse.Namespace) -> int:
+    """Print one [PASS]/[FAIL] line per check; 0 only when all pass."""
+    report = run_doctor(store_path=args.store, endpoint=args.endpoint)
+    for line in report.lines:
+        print(line)
+    return 0 if report.ok else 1
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

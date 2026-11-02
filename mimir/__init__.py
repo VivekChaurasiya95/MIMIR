@@ -17,6 +17,8 @@ MVP first boundary (observe, learn, infer):
 - :mod:`mimir.cadence` -- consent-based cadence telemetry (step 2)
 - :mod:`mimir.devstate` -- developer state engine (step 2)
 - :mod:`mimir.sensory` -- observation service composition (step 2)
+- :mod:`mimir.privacy` -- pre-publish privacy gate (Phase 1)
+- :mod:`mimir.chunking` -- episodic chunking engine (Phase 1)
 - :mod:`mimir.desktop` -- window targets, focus guard, SendInput (step 4)
 - :mod:`mimir.safety` -- independent safety controller + E-stop (step 6)
 """
@@ -53,6 +55,7 @@ from .detective import (
     ClusteringResult,
     DetectiveError,
     EpisodeCluster,
+    FallbackOfflineStub,
     LLMError,
     LLMOutputError,
     build_inference_prompt,
@@ -73,6 +76,8 @@ from .ast_delta import (
     summarize_source,
 )
 from .cadence import CadenceObserver, CadenceSnapshot
+from .chunking import EpisodicChunkingEngine, MicroAction
+from .privacy import PrivacyGate
 from .desktop import (
     FocusGuard,
     PyWin32WindowBackend,
@@ -93,6 +98,24 @@ from .devstate import (
     DeveloperStateEngine,
     FieldProvenance,
 )
+from .embodiment import (
+    ActuationGateway,
+    ESTOP_LATENCY_BUDGET_MS,
+    EmbodimentError,
+    EscHotkeyLatch,
+    EstopTrip,
+    FileEntry,
+    FileSnapshot,
+    FocusLostError,
+    OutcomeVerifier,
+    RollbackAction,
+    RollbackReport,
+    SPOKEN_STOP_PHRASES,
+    TripleFailsafe,
+    VerificationCheck,
+    VerificationReport,
+    is_spoken_stop,
+)
 from .episodes import (
     BehavioralEpisode,
     EpisodeContext,
@@ -110,6 +133,7 @@ from .events import (
     EventPriority,
     EventType,
     EventValidationError,
+    PHASE5_VISOR_BY_EVENT,
     Subscription,
     bind_visor_to_bus,
     create_event,
@@ -185,10 +209,16 @@ from .trajectory import (
     TrajectoryReport,
 )
 from .ui import (
+    PHASE5_LABELS,
+    PHASE5_STATES,
+    PHASE5_TO_VISOR,
     VISOR_COLORS,
+    VISOR_TO_PHASE5,
     VisorController,
     VisorError,
     VisorState,
+    phase5_of,
+    set_phase5_state,
 )
 from .voice import VoiceCoordinator, VoiceError
 from .voice_action import (
@@ -205,6 +235,22 @@ from .llama_intent import (
     query_local_llama_intent,
     select_best_local_model,
 )
+from .planning import (
+    GUI_GRANTED_PERMISSIONS,
+    HIGH_RISK_PERMISSIONS,
+    MEDIUM_RISK_PERMISSIONS,
+    ActionPlan,
+    ActionPlanner,
+    PlannedStep,
+    PlanningError,
+    RiskAssessment,
+    RiskClassifier,
+    RiskLevel,
+    StepKind,
+    build_safety_checklist,
+    describe_autonomy,
+    required_permissions_for_risk,
+)
 
 __version__ = "0.1.0"
 
@@ -212,6 +258,8 @@ __all__ = [
     "APPROVE_PENDING_ACTION",
     "STRUCTURED_INTENTS",
     "ActorError",
+    "ActionPlan",
+    "ActionPlanner",
     "ActionRegistry",
     "ActionSpec",
     "ActionStatus",
@@ -237,6 +285,7 @@ __all__ = [
     "EmbeddingError",
     "EnqueueResult",
     "EpistemicStatus",
+    "EpisodicChunkingEngine",
     "EpisodeCluster",
     "EpisodeContext",
     "EpisodeOutcome",
@@ -248,6 +297,7 @@ __all__ = [
     "EventValidationError",
     "ExecutionPlan",
     "FieldProvenance",
+    "FallbackOfflineStub",
     "FileEvent",
     "FileTransition",
     "FilesystemWatcher",
@@ -259,10 +309,24 @@ __all__ = [
     "LLMError",
     "LLMOutputError",
     "NotARepositoryError",
+    "MicroAction",
+    "GUI_GRANTED_PERMISSIONS",
+    "HIGH_RISK_PERMISSIONS",
+    "MEDIUM_RISK_PERMISSIONS",
+    "PlannedStep",
+    "PlanningError",
     "PrincipleNotFoundError",
     "PrincipleStore",
+    "PrivacyGate",
     "PyWin32WindowBackend",
     "RegistryError",
+    "RiskAssessment",
+    "RiskClassifier",
+    "RiskLevel",
+    "StepKind",
+    "build_safety_checklist",
+    "describe_autonomy",
+    "required_permissions_for_risk",
     "ReplicationActor",
     "ReplicationRequest",
     "ReplicationResult",
@@ -280,11 +344,18 @@ __all__ = [
     "is_ollama_available",
     "query_local_llama_intent",
     "select_best_local_model",
+    "PHASE5_LABELS",
+    "PHASE5_STATES",
+    "PHASE5_TO_VISOR",
+    "PHASE5_VISOR_BY_EVENT",
     "VISOR_COLORS",
+    "VISOR_TO_PHASE5",
     "VOICE_GRANTED_PERMISSIONS",
     "VisorController",
     "VisorError",
     "VisorState",
+    "phase5_of",
+    "set_phase5_state",
     "VoiceActionError",
     "VoiceActionService",
     "VoiceCoordinator",
@@ -292,6 +363,22 @@ __all__ = [
     "VoiceError",
     "WindowBackend",
     "WindowInfo",
+    "ActuationGateway",
+    "ESTOP_LATENCY_BUDGET_MS",
+    "EmbodimentError",
+    "EscHotkeyLatch",
+    "EstopTrip",
+    "FileEntry",
+    "FileSnapshot",
+    "FocusLostError",
+    "OutcomeVerifier",
+    "RollbackAction",
+    "RollbackReport",
+    "SPOKEN_STOP_PHRASES",
+    "TripleFailsafe",
+    "VerificationCheck",
+    "VerificationReport",
+    "is_spoken_stop",
     "__version__",
     "AuditRecord",
     "BoundedJobQueue",

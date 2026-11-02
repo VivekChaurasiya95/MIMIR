@@ -25,9 +25,12 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Literal, Optional, Sequence
+from typing import TYPE_CHECKING, Callable, Literal, Optional, Sequence
 
 from .events import Event, EventBus, EventType, create_event, get_event_bus
+
+if TYPE_CHECKING:
+    from .privacy import PrivacyGate
 
 __all__ = [
     "DEFAULT_DEBOUNCE_S",
@@ -273,9 +276,17 @@ class FilesystemWatcher:
         exclude_dirs: frozenset[str] = DEFAULT_EXCLUDE_DIRS,
         backend: Literal["auto", "watchdog", "poll"] = "auto",
         sink: Optional[Callable[[FileEvent], None]] = None,
+        allowed_roots: Optional[Sequence[str | Path]] = None,
+        privacy_gate: Optional["PrivacyGate"] = None,
     ) -> None:
         if not roots:
             raise ValueError("roots: expected at least one directory")
+        gate = privacy_gate
+        if gate is None and allowed_roots is not None:
+            from .privacy import PrivacyGate as _Gate
+
+            gate = _Gate(allowed_roots)
+        self.privacy_gate = gate
         if poll_interval_s <= 0:
             raise ValueError(
                 f"poll_interval_s: expected positive seconds, "
@@ -355,6 +366,16 @@ class FilesystemWatcher:
             except Exception:
                 continue
 
+    def _passes_gate(self, path: str) -> bool:
+        """Pre-publish privacy screen (allowlist-only, no secrets)."""
+        gate = self.privacy_gate
+        if gate is None:
+            return True
+        try:
+            return bool(gate.allows(path))
+        except Exception:
+            return False
+
     # -- synchronous cycle (thread target body + test entry point) -------
     def poll_once(self, now: Optional[float] = None) -> list[FileEvent]:
         """Run one observation cycle; returns events published."""
@@ -363,15 +384,21 @@ class FilesystemWatcher:
             for root in self.roots:
                 if should_exclude(root):
                     continue
+                if not self._passes_gate(root):
+                    continue
                 current = scan_tree(root)
                 previous = self._snapshots.get(root, {})
                 for kind, path in diff_snapshots(previous, current):
+                    if not self._passes_gate(path):
+                        continue
                     self.debouncer.note(kind, path, root, moment)
                 self._snapshots[root] = current
         matured = self.debouncer.flush(moment)
+        published: list[FileEvent] = []
         for event in matured:
-            self._publish(event)
-        return matured
+            if self._publish(event) is not None:
+                published.append(event)
+        return published
 
     def note_many(
         self, items: Sequence[tuple[FsKind, str, str]],
@@ -382,7 +409,10 @@ class FilesystemWatcher:
         for kind, path, root in items:
             if should_exclude(path, exclude_dirs=self.exclude_dirs):
                 continue
-            self.debouncer.note(kind, os.path.abspath(path), root, moment)
+            absolute = os.path.abspath(path)
+            if not self._passes_gate(absolute):
+                continue
+            self.debouncer.note(kind, absolute, root, moment)
 
     # -- watchdog backend -------------------------------------------------
     def _start_watchdog_locked(self) -> None:
@@ -431,6 +461,8 @@ class FilesystemWatcher:
         return self.bus if self.bus is not None else get_event_bus()
 
     def _publish(self, event: FileEvent) -> Optional[Event]:
+        if not self._passes_gate(event.path):
+            return None
         if self.sink is not None:
             try:
                 self.sink(event)
@@ -460,8 +492,28 @@ class FilesystemWatcher:
             dest, exclude_dirs=self.exclude_dirs
         ):
             return
+        src_ok = self._passes_gate(os.path.abspath(src))
+        dest_ok = self._passes_gate(os.path.abspath(dest))
+        if not src_ok and not dest_ok:
+            return
         try:
             bus = self._bus()
+            if not (src_ok and dest_ok):
+                lone = (
+                    (EventType.FILE_DELETED, os.path.abspath(src),
+                     "deleted")
+                    if src_ok
+                    else (EventType.FILE_CREATED,
+                          os.path.abspath(dest), "created")
+                )
+                bus.emit(
+                    lone[0],
+                    "sensory.fs_watcher",
+                    {"path": lone[1], "root": self.roots[0],
+                     "kind": lone[2], "observed_at": time.time()},
+                    session_id=self.session_id,
+                )
+                return
             first = bus.emit(
                 EventType.FILE_DELETED,
                 "sensory.fs_watcher",

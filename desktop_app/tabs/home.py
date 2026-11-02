@@ -154,8 +154,8 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
 
     layout.addWidget(functionality_banner(
         "✦",
-        "Habitous Intelligent Developer Companion",
-        "Habitous continuously observes how you code, mines invariant behavioral standards into "
+        "MIMIR Intelligent Developer Companion",
+        "MIMIR continuously observes how you code, mines invariant behavioral standards into "
         "inspectable principles, and replicates your authentic style when generating new solutions.",
         pills=[("100% On-Device", "confirmed"), ("Continuous Telemetry", "learning"), ("Adaptive Style", "confirmed")],
         icon_cls="icon_box_purple",
@@ -563,7 +563,7 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
             else:
                 home_error.setVisible(False)
                 status.showMessage(
-                    "Habitous active observation started for "
+                    "MIMIR active observation started for "
                     f"{Path(repo).name}.", 4000)
             refresh_content()
             return
@@ -578,7 +578,7 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
                 except OSError:
                     pass
                 status.showMessage(
-                    "Habitous active observation started for "
+                    "MIMIR active observation started for "
                     f"{Path(repo).name}.", 4000)
             watch_btn.setEnabled(True)
             refresh_content()

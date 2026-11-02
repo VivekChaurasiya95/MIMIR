@@ -1,6 +1,6 @@
 """Llama-3.2 foundation layer: task understanding for the digital cobot.
 
-Habitous treats a local Llama-3.2 model (via the on-device Ollama daemon
+MIMIR treats a local Llama-3.2 model (via the on-device Ollama daemon
 at loopback ``http://127.0.0.1:11434``) as its base for understanding
 what the user asks and does: classifying tasks, answering questions in
 the user's own terms, and summarizing live activity while Habi wanders.
@@ -101,7 +101,7 @@ def build_foundation_prompt(
         kind = "other"
     task = task.strip()
     lines = [
-        "You are Habi, the Habitous digital cobot: a 100% on-device "
+        "You are Habi, the MIMIR digital cobot: a 100% on-device "
         "developer companion. Undertake the user's request below "
         "directly and completely.",
         "",

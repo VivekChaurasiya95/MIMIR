@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..presenters import confidence_badge, format_principle_detail
+from ..presenters import (
+    confidence_badge,
+    format_principle_detail,
+    format_provenance,
+    review_queue,
+)
 from ..state import AppState
 from ._layout import (
     ClickableCard,
@@ -35,14 +40,14 @@ def build_memory_tab(state: AppState, status: Any) -> Any:
     _, _, _, QtWidgets = load_qt()
     root, layout = page()
     layout.addWidget(page_head(
-        "Memory", "What Habitous knows about you.",
+        "Memory", "What MIMIR knows about you.",
         "These are the principles learned from your work, with supporting evidence."))
 
     layout.addWidget(functionality_banner(
         "📖",
         "Behavioral Principle Bank",
         "Inspect and calibrate every coding standard, testing invariant, and architectural pattern "
-        "Habitous has abstracted from your work. Each rule is scored with epistemic confidence and verifiable evidence.",
+        "MIMIR has abstracted from your work. Each rule is scored with epistemic confidence and verifiable evidence.",
         pills=[("Epistemic Scoring", "confirmed"), ("Inspectable Traces", "learning"), ("Human Calibrated", "confirmed")],
         icon_cls="icon_box_purple",
     ))
@@ -80,6 +85,33 @@ def build_memory_tab(state: AppState, status: Any) -> Any:
     seed_row.addWidget(seed_btn)
     seed_row.addStretch(1)
     layout.addLayout(seed_row)
+
+    deck_box, deck_lay = card()
+    deck_title = QtWidgets.QLabel("Review & Calibration Deck")
+    deck_title.setObjectName("h2")
+    deck_sub = QtWidgets.QLabel("")
+    deck_sub.setObjectName("muted")
+    deck_sub.setWordWrap(True)
+    deck_preview = QtWidgets.QLabel("")
+    deck_preview.setWordWrap(True)
+    deck_preview.setVisible(False)
+    deck_pos = QtWidgets.QLabel("")
+    deck_pos.setObjectName("muted")
+    deck_prev = QtWidgets.QPushButton("← Prev")
+    deck_prev.setObjectName("soft")
+    deck_prev.setToolTip("Show the previous principle needing review.")
+    deck_next = QtWidgets.QPushButton("Next →")
+    deck_next.setObjectName("soft")
+    deck_next.setToolTip("Show the next principle needing review.")
+    deck_open = QtWidgets.QPushButton("Open in detail →")
+    deck_open.setObjectName("ink")
+    deck_open.setToolTip("Inspect, calibrate, or edit this principle.")
+    deck_lay.addWidget(deck_title)
+    deck_lay.addWidget(deck_sub)
+    deck_lay.addWidget(deck_preview)
+    deck_lay.addLayout(actions_row(deck_pos, deck_prev, deck_next,
+                                  deck_open))
+    layout.addWidget(deck_box)
 
     stack = QtWidgets.QStackedWidget()
     list_page = QtWidgets.QWidget()
@@ -142,6 +174,10 @@ def build_memory_tab(state: AppState, status: Any) -> Any:
     minus_btn.setToolTip("Records a contradiction and lowers confidence.")
     copy_btn = QtWidgets.QPushButton("Copy rule")
     copy_btn.setObjectName("soft")
+    edit_btn = QtWidgets.QPushButton("Edit rule…")
+    edit_btn.setObjectName("soft")
+    edit_btn.setToolTip("Edit name, category, scope, invariant, "
+                        "and anti-patterns.")
     delete_btn = QtWidgets.QPushButton("Delete")
     delete_btn.setObjectName("soft")
     act_row.addWidget(QtWidgets.QLabel("Evidence:"))
@@ -149,9 +185,27 @@ def build_memory_tab(state: AppState, status: Any) -> Any:
     act_row.addWidget(plus_btn)
     act_row.addWidget(minus_btn)
     act_row.addWidget(copy_btn)
+    act_row.addWidget(edit_btn)
     act_row.addWidget(delete_btn)
     act_row.addStretch(1)
     detail_lay.addLayout(act_row)
+    cal_row = QtWidgets.QHBoxLayout()
+    cal_row.setSpacing(10)
+    conf_spin = QtWidgets.QDoubleSpinBox()
+    conf_spin.setRange(0.0, 1.0)
+    conf_spin.setSingleStep(0.05)
+    conf_spin.setDecimals(2)
+    conf_spin.setMaximumWidth(90)
+    conf_spin.setToolTip("Set absolute confidence directly "
+                         "(human calibration).")
+    set_btn = QtWidgets.QPushButton("Set confidence")
+    set_btn.setObjectName("soft")
+    set_btn.setToolTip("Overwrite confidence with the chosen value.")
+    cal_row.addWidget(QtWidgets.QLabel("Set confidence:"))
+    cal_row.addWidget(conf_spin)
+    cal_row.addWidget(set_btn)
+    cal_row.addStretch(1)
+    detail_lay.addLayout(cal_row)
     detail_lay.addStretch(1)
     stack.addWidget(detail_page)
     layout.addWidget(stack, 1)
@@ -218,6 +272,7 @@ def build_memory_tab(state: AppState, status: Any) -> Any:
                 widget.deleteLater()
 
     def render() -> None:
+        render_deck()
         principles = visible_principles()
         current["principles"] = principles
         clear_feed()
@@ -345,7 +400,19 @@ def build_memory_tab(state: AppState, status: Any) -> Any:
             f"{conf:.2f} · "
             f"+{principle.epistemic_status.supporting_episodes_count}/"
             f"−{principle.epistemic_status.contradictions_count}")
-        detail_text.setPlainText(format_principle_detail(principle))
+        try:
+            provenance = format_provenance(principle, state.episodes)
+        except Exception:
+            provenance = ""
+        body = format_principle_detail(principle)
+        detail_text.setPlainText(
+            body + ("\n\n" + provenance if provenance else ""))
+        try:
+            blocked = conf_spin.blockSignals(True)
+            conf_spin.setValue(conf)
+            conf_spin.blockSignals(blocked)
+        except Exception:
+            pass
         stack.setCurrentIndex(1)
 
     def selected() -> Any | None:
@@ -416,6 +483,122 @@ def build_memory_tab(state: AppState, status: Any) -> Any:
         status.showMessage(
             f"Seeded {len(seeded)} {title} principle(s) into Memory.", 5000)
 
+    def render_deck() -> None:
+        try:
+            queue = review_queue(all_principles())
+        except Exception:
+            queue = []
+        deck["queue"] = queue
+        if deck["index"] >= len(queue):
+            deck["index"] = 0
+        if not queue:
+            deck_sub.setText("Every principle is calibrated — "
+                             "nothing needs review.")
+            deck_preview.setText("")
+            deck_preview.setVisible(False)
+            deck_pos.setText("")
+            for btn in (deck_prev, deck_next, deck_open):
+                btn.setEnabled(False)
+            return
+        item = queue[deck["index"]]
+        conf = item.epistemic_status.confidence_score
+        label, _kind = confidence_badge(conf)
+        if item.epistemic_status.contradictions_count > 0:
+            reason = "has contradictions"
+        else:
+            reason = "low confidence"
+        deck_sub.setText(
+            f"{len(queue)} principle(s) need review — "
+            "lowest confidence first.")
+        deck_preview.setText(
+            f"{item.name} · {conf:.2f} ({label}, {reason})")
+        deck_preview.setVisible(True)
+        deck_pos.setText(f"{deck['index'] + 1} / {len(queue)}")
+        deck_prev.setEnabled(len(queue) > 1)
+        deck_next.setEnabled(len(queue) > 1)
+        deck_open.setEnabled(True)
+
+    def deck_step(delta: int) -> None:
+        queue = deck["queue"]
+        if not queue:
+            return
+        deck["index"] = (deck["index"] + delta) % len(queue)
+        render_deck()
+
+    def deck_open_current() -> None:
+        queue = deck["queue"]
+        if not queue:
+            return
+        open_detail(queue[deck["index"]])
+
+    def set_absolute() -> None:
+        principle = selected()
+        if principle is None:
+            return
+        try:
+            refreshed = state.set_confidence(
+                principle.id, float(conf_spin.value()),
+                evidence_edit.text().strip() or "desktop_review")
+        except Exception as exc:
+            status.showMessage(f"Calibration failed: {exc}", 8000)
+            return
+        open_detail(refreshed)
+        render()
+        status.showMessage(
+            "Confidence set to "
+            f"{refreshed.epistemic_status.confidence_score:.2f}.", 4000)
+
+    def edit_rule() -> None:
+        principle = selected()
+        if principle is None:
+            return
+        dialog = QtWidgets.QDialog(root)
+        dialog.setWindowTitle("Edit principle")
+        dialog.setMinimumWidth(480)
+        form = QtWidgets.QFormLayout(dialog)
+        name_edit = QtWidgets.QLineEdit(principle.name)
+        category_edit = QtWidgets.QLineEdit(principle.category)
+        scope_edit = QtWidgets.QLineEdit(
+            principle.context_trigger.scope)
+        invariant_edit = QtWidgets.QPlainTextEdit(
+            principle.latent_invariant)
+        invariant_edit.setMinimumHeight(120)
+        anti_edit = QtWidgets.QPlainTextEdit(
+            "\n".join(principle.anti_patterns))
+        anti_edit.setMinimumHeight(80)
+        form.addRow("Name:", name_edit)
+        form.addRow("Category:", category_edit)
+        form.addRow("Scope:", scope_edit)
+        form.addRow("Invariant:", invariant_edit)
+        form.addRow("Anti-patterns (one per line):", anti_edit)
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Save
+            | QtWidgets.QDialogButtonBox.StandardButton.Cancel)
+        form.addRow(buttons)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
+            return
+        try:
+            refreshed = state.update_principle(
+                principle.id,
+                name=name_edit.text().strip(),
+                category=category_edit.text().strip(),
+                scope=scope_edit.text().strip(),
+                latent_invariant=invariant_edit.toPlainText().strip(),
+                anti_patterns=[line.strip()
+                               for line in anti_edit.toPlainText().splitlines()
+                               if line.strip()],
+            )
+        except Exception as exc:
+            status.showMessage(f"Edit failed: {exc}", 8000)
+            return
+        open_detail(refreshed)
+        render()
+        status.showMessage("Principle updated.", 4000)
+
+    deck: dict[str, Any] = {"queue": [], "index": 0}
+
     seed_btn.clicked.connect(on_seed)
     search_edit.textChanged.connect(lambda _t: render())
     search_edit.returnPressed.connect(lambda: render())
@@ -425,7 +608,12 @@ def build_memory_tab(state: AppState, status: Any) -> Any:
     plus_btn.clicked.connect(lambda: adjust(0.05))
     minus_btn.clicked.connect(lambda: adjust(-0.10))
     copy_btn.clicked.connect(copy_rule)
+    edit_btn.clicked.connect(edit_rule)
     delete_btn.clicked.connect(delete)
+    set_btn.clicked.connect(set_absolute)
+    deck_prev.clicked.connect(lambda: deck_step(-1))
+    deck_next.clicked.connect(lambda: deck_step(1))
+    deck_open.clicked.connect(deck_open_current)
 
     def refresh_content() -> None:
         if stack.currentIndex() == 0:

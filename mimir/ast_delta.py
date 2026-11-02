@@ -27,10 +27,13 @@ import os
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from .events import Event, EventBus, EventType, get_event_bus
 from .telemetry import SECRET_FILENAME_GLOBS
+
+if TYPE_CHECKING:
+    from .privacy import PrivacyGate
 
 __all__ = [
     "SOURCE_EXTENSIONS",
@@ -491,6 +494,7 @@ class AstObserver:
         session_id: str = "",
         backend: str = "auto",
         max_bytes: int = _MAX_FILE_BYTES,
+        privacy_gate: Optional["PrivacyGate"] = None,
     ) -> None:
         if max_bytes < 1:
             raise ValueError(
@@ -498,16 +502,28 @@ class AstObserver:
             )
         self.bus = bus
         self.session_id = session_id
+        self.privacy_gate = privacy_gate
         self.backend = backend
         self.max_bytes = max_bytes
         self._summaries: dict[str, SourceSummary] = {}
         self._lock = threading.Lock()
+
+    def _passes_gate(self, path: str) -> bool:
+        gate = self.privacy_gate
+        if gate is None:
+            return True
+        try:
+            return bool(gate.allows(path))
+        except Exception:
+            return False
 
     def observe(
         self, path: str, text: str, language: Optional[str] = None
     ) -> Optional[AstDelta]:
         """Observe new *text* for *path*; delta or None on no change."""
         key = os.path.normpath(path)
+        if not self._passes_gate(key):
+            return None
         summary = summarize_source(key, text, language,
                                    backend=self.backend)
         with self._lock:
@@ -529,6 +545,8 @@ class AstObserver:
         """
         key = os.path.normpath(path)
         if _is_secret_filename(key):
+            return None
+        if not self._passes_gate(key):
             return None
         if os.path.splitext(key)[1].lower() not in SOURCE_EXTENSIONS:
             return None
@@ -561,27 +579,40 @@ class AstObserver:
             self._summaries.clear()
 
     def _publish(self, delta: AstDelta) -> Optional[Event]:
+        if not self._passes_gate(delta.path):
+            return None
+        payload: dict[str, Any] = {
+            "file": delta.path,
+            "language": delta.language,
+            "added_functions": list(delta.added_functions),
+            "modified_functions": list(delta.modified_functions),
+            "removed_functions": list(delta.removed_functions),
+            "signature_changes": list(delta.signature_changes),
+            "added_classes": list(delta.added_classes),
+            "removed_classes": list(delta.removed_classes),
+            "modified_classes": list(delta.modified_classes),
+            "added_imports": list(delta.added_imports),
+            "removed_imports": list(delta.removed_imports),
+            "syntax_valid": delta.syntax_valid,
+            "syntax_error": delta.syntax_error,
+            "observed_at": time.time(),
+        }
+        gate = self.privacy_gate
+        if gate is not None:
+            try:
+                screened, _ = gate.gate_payload_for_path(
+                    delta.path, payload)
+            except Exception:
+                return None
+            if screened is None:
+                return None
+            payload = screened
         bus = self.bus if self.bus is not None else get_event_bus()
         try:
             return bus.emit(
                 EventType.AST_DELTA,
                 "sensory.ast_observer",
-                {
-                    "file": delta.path,
-                    "language": delta.language,
-                    "added_functions": list(delta.added_functions),
-                    "modified_functions": list(delta.modified_functions),
-                    "removed_functions": list(delta.removed_functions),
-                    "signature_changes": list(delta.signature_changes),
-                    "added_classes": list(delta.added_classes),
-                    "removed_classes": list(delta.removed_classes),
-                    "modified_classes": list(delta.modified_classes),
-                    "added_imports": list(delta.added_imports),
-                    "removed_imports": list(delta.removed_imports),
-                    "syntax_valid": delta.syntax_valid,
-                    "syntax_error": delta.syntax_error,
-                    "observed_at": time.time(),
-                },
+                payload,
                 session_id=self.session_id,
             )
         except Exception:

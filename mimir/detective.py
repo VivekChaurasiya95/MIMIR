@@ -2,13 +2,16 @@
 
 MVP Day 3. Groups similar :class:`~mimir.episodes.BehavioralEpisode` objects
 with unsupervised heuristic clustering, then distills each cluster into a
-:class:`~mimir.principles.BehavioralPrinciple` via either the offline
-heuristic generator or a pluggable LLM function.
+:class:`~mimir.principles.BehavioralPrinciple`.
 
-The LLM hook (:data:`LLMFn`) keeps Day 3 backend-agnostic: any callable that
-maps a prompt string to a JSON string can serve as the inductive reasoner
-(README section 3.3). Bayesian confidence updates arrive on MVP Day 4; Day 3
-stamps initial confidence from cluster support only.
+Phase 2 made the pluggable LLM function (:data:`LLMFn`) the authentic
+inductive path: any callable mapping a prompt string to a JSON string
+serves as the inductive reasoner (README section 3.3), typically the
+on-device Llama-3.2 foundation via Ollama. The Day-3 static signal
+templates survive only as :class:`FallbackOfflineStub`, the fail-closed
+scaffold used when no provider is configured or the live call fails.
+Bayesian confidence updates arrive on MVP Day 4; Day 3 stamps initial
+confidence from cluster support only.
 """
 
 from __future__ import annotations
@@ -30,11 +33,13 @@ from ._common import (
 )
 from .episodes import BehavioralEpisode
 from .principles import BehavioralPrinciple, ContextTrigger, EpistemicStatus
+from .telemetry import redact_text
 
 __all__ = [
     "ClusteringResult",
     "DetectiveError",
     "EpisodeCluster",
+    "FallbackOfflineStub",
     "LLMError",
     "LLMFn",
     "LLMOutputError",
@@ -541,52 +546,85 @@ def _epistemic_status(cluster: EpisodeCluster, confidence: float) -> EpistemicSt
     )
 
 
-def infer_from_cluster(cluster: EpisodeCluster) -> BehavioralPrinciple:
-    """Distill one cluster into a principle with the offline heuristic.
+class FallbackOfflineStub:
+    """Deterministic offline fallback for inductive inference (no LLM).
 
-    The dominant behavioral signal selects a template; cluster evidence
-    (scope, language, size, member ids) fills the trigger, traces, and
-    epistemic status. Clusters with no detectable signal yield a generic
-    recurring-pattern principle describing the observed change shape.
+    Phase 2 demoted the Day-3 static signal templates here. The stub is
+    the fail-closed scaffold: it runs only when no LLM provider is
+    configured (``llm_fn=None``) or when an auto-resolved live call
+    fails. It never invents evidence — the trigger, traces, and
+    epistemic status stay bound to the cluster's member episode ids,
+    exactly like the LLM path.
     """
-    if not isinstance(cluster, EpisodeCluster):
-        raise ValueError(
-            f"cluster: expected EpisodeCluster, got {type(cluster).__name__}"
+
+    #: The demoted static templates, keyed by dominant signal.
+    TEMPLATES = _SIGNAL_TEMPLATES
+
+    def __init__(self) -> None:
+        raise TypeError(
+            "FallbackOfflineStub is static-only; call FallbackOfflineStub.infer()"
         )
-    signal = _dominant_signal(cluster)
-    where = _where(cluster)
-    if signal is None:
-        name = f"Recurring Change Pattern in {where}"
-        category = "workflow"
-        invariant = _fallback_invariant(cluster)
-        anti_patterns = (
-            "Applying ad-hoc one-off edits where the recurring shape fits",
-            "Leaving similar tasks inconsistent with the observed shape",
+
+    @staticmethod
+    def infer(cluster: EpisodeCluster) -> BehavioralPrinciple:
+        """Distill one cluster into a principle with static templates.
+
+        The dominant behavioral signal selects a template; cluster
+        evidence (scope, language, size, member ids) fills the trigger,
+        traces, and epistemic status. Clusters with no detectable
+        signal yield a generic recurring-pattern principle describing
+        the observed change shape.
+        """
+        if not isinstance(cluster, EpisodeCluster):
+            raise ValueError(
+                f"cluster: expected EpisodeCluster, got {type(cluster).__name__}"
+            )
+        signal = _dominant_signal(cluster)
+        where = _where(cluster)
+        if signal is None:
+            name = f"Recurring Change Pattern in {where}"
+            category = "workflow"
+            invariant = _fallback_invariant(cluster)
+            anti_patterns = (
+                "Applying ad-hoc one-off edits where the recurring shape fits",
+                "Leaving similar tasks inconsistent with the observed shape",
+            )
+        else:
+            template = _SIGNAL_TEMPLATES[signal]
+            name = f"{template['name']} in {where}"
+            category = template["category"]
+            invariant = (
+                f"{template['invariant']} "
+                f"Observed across {cluster.size} episodes in {where}."
+            )
+            anti_patterns = template["anti_patterns"]
+        return BehavioralPrinciple(
+            id=_principle_id(cluster, signal),
+            name=name,
+            category=category,
+            context_trigger=ContextTrigger(
+                scope=_trigger_scope(cluster),
+                language_agnostic=cluster.language is None,
+            ),
+            latent_invariant=invariant,
+            anti_patterns=anti_patterns,
+            epistemic_status=_epistemic_status(
+                cluster, _initial_confidence(cluster.size)
+            ),
+            inspectable_traces=tuple(sorted(cluster.member_ids)),
         )
-    else:
-        template = _SIGNAL_TEMPLATES[signal]
-        name = f"{template['name']} in {where}"
-        category = template["category"]
-        invariant = (
-            f"{template['invariant']} "
-            f"Observed across {cluster.size} episodes in {where}."
-        )
-        anti_patterns = template["anti_patterns"]
-    return BehavioralPrinciple(
-        id=_principle_id(cluster, signal),
-        name=name,
-        category=category,
-        context_trigger=ContextTrigger(
-            scope=_trigger_scope(cluster),
-            language_agnostic=cluster.language is None,
-        ),
-        latent_invariant=invariant,
-        anti_patterns=anti_patterns,
-        epistemic_status=_epistemic_status(
-            cluster, _initial_confidence(cluster.size)
-        ),
-        inspectable_traces=tuple(sorted(cluster.member_ids)),
-    )
+
+
+def infer_from_cluster(cluster: EpisodeCluster) -> BehavioralPrinciple:
+    """Distill one cluster into a principle with the offline fallback.
+
+    Backward-compatible alias for :meth:`FallbackOfflineStub.infer`:
+    the dominant behavioral signal selects a static template while the
+    trigger, traces, and epistemic status stay evidence-bound. Prefer
+    passing an ``llm_fn`` to :func:`infer_principles` for authentic
+    inductive reasoning.
+    """
+    return FallbackOfflineStub.infer(cluster)
 
 
 def build_inference_prompt(
@@ -595,11 +633,16 @@ def build_inference_prompt(
     max_episodes: int = _MAX_PROMPT_EPISODES,
     max_diff_chars: int = _MAX_PROMPT_DIFF_CHARS,
 ) -> str:
-    """Render the induction prompt for one cluster (pre-redacted content).
+    """Render the induction prompt for one cluster (secrets redacted).
 
-    Episode diffs arrive truncated per ``max_diff_chars``; only the first
-    ``max_episodes`` members (sorted by id) are inlined. Skipped and binary
-    transitions contribute a marker line only, never content.
+    Episode summaries and diffs pass through
+    :func:`mimir.telemetry.redact_text`, so no raw secret value ever
+    reaches the model — even for episodes that bypassed ingestion-time
+    redaction (live AST deltas, chunked save bursts, hand-built
+    episodes). Diffs arrive truncated per ``max_diff_chars``; only the
+    first ``max_episodes`` members (sorted by id) are inlined. Skipped
+    and binary transitions contribute a marker line only, never
+    content.
     """
     if not isinstance(cluster, EpisodeCluster):
         raise ValueError(
@@ -611,15 +654,21 @@ def build_inference_prompt(
         "You are MIMIR's inductive inference engine (the Detective).",
         "Distill the observed behavioral episodes below into ONE reusable",
         "behavioral principle capturing the latent invariant behind them.",
+        "Name the LATENT INVARIANT (the timeless rule behind the edits),",
+        "the CONTEXT TRIGGER (when and where the rule applies: scope and",
+        "language), and the ANTI-PATTERNS (concrete behaviors the rule",
+        "forbids). Generalize across the episodes; do not quote diffs",
+        "verbatim and never repeat secret-looking values.",
         f"Cluster: {cluster.id} | size {cluster.size} | "
         f"language {cluster.language or 'unknown'} | "
         f"scope {cluster.scope or 'repository-wide'}",
         "",
-        "Episodes (content is pre-redacted; skipped/binary carry no diff):",
+        "Episodes (summaries/diffs redacted; skipped/binary carry no diff):",
     ]
     for episode in cluster.members[:max_episodes]:
         files = ",".join(t.path for t in episode.transitions) or "-"
-        lines.append(f"--- {episode.id} | {episode.observed_at} | {episode.summary}")
+        summary = redact_text(episode.summary).text
+        lines.append(f"--- {episode.id} | {episode.observed_at} | {summary}")
         lines.append(
             f"scope={episode.context.scope or '-'} "
             f"language={episode.context.language or '-'} files={files}"
@@ -633,7 +682,7 @@ def build_inference_prompt(
             if transition.binary:
                 lines.append(f"[{transition.path} binary, no content]")
                 continue
-            diff = transition.diff
+            diff = redact_text(transition.diff).text
             if len(diff) > max_diff_chars:
                 diff = diff[:max_diff_chars] + _TRUNCATION_MARKER
             lines.append(
@@ -751,8 +800,12 @@ def infer_principles(
 ) -> list[BehavioralPrinciple]:
     """Cluster episodes and distill one principle per qualifying cluster.
 
-    With ``llm_fn=None`` (default) the offline heuristic generates every
-    principle; otherwise each cluster prompt goes through ``llm_fn``.
+    The ``llm_fn`` callable is the authentic inductive path: each
+    cluster prompt (invariant / context-trigger / anti-pattern, with
+    secrets redacted) goes through it, and the returned JSON becomes
+    the principle while ids, traces, and epistemic status stay
+    evidence-bound. With ``llm_fn=None`` (default) the
+    :class:`FallbackOfflineStub` generates every principle instead.
     Clusters are processed in deterministic id order.
     """
     if llm_fn is not None and not callable(llm_fn):
@@ -765,7 +818,7 @@ def infer_principles(
     principles: list[BehavioralPrinciple] = []
     for cluster in result.clusters:
         if llm_fn is None:
-            principles.append(infer_from_cluster(cluster))
+            principles.append(FallbackOfflineStub.infer(cluster))
         else:
             principles.append(
                 infer_from_cluster_with_llm(

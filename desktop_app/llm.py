@@ -12,21 +12,29 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from typing import Any, Callable
 
 __all__ = [
+    "DEFAULT_ANTHROPIC_MODEL",
     "DEFAULT_GEMINI_MODEL",
     "DEFAULT_OLLAMA_ENDPOINT",
     "DEFAULT_OLLAMA_MODEL",
     "DEFAULT_OPENAI_MODEL",
-    "DEFAULT_ANTHROPIC_MODEL",
+    "DEFAULT_PROVIDER",
+    "DEFAULT_PROVIDER_ID",
     "LLMFn",
     "LLMError",
+    "LLMProvider",
+    "PROVIDER_IDS",
     "build_anthropic_client",
     "build_gemini_client",
+    "build_llm_client",
     "build_ollama_client",
     "build_openai_client",
+    "default_model_for",
     "normalize_provider",
+    "provider_from_prefs",
 ]
 
 #: Pluggable LLM completion: prompt string in, solution string out.
@@ -38,6 +46,13 @@ DEFAULT_OLLAMA_MODEL = "llama3.2:1b"
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 DEFAULT_ANTHROPIC_MODEL = "claude-3-5-sonnet-latest"
+
+#: Provider ids understood by :func:`build_llm_client` (offline first).
+PROVIDER_IDS = ("offline", "ollama", "openai", "gemini", "anthropic")
+
+#: Phase 2 standard: on-device Ollama/Llama-3.2 is the default
+#: inductive reasoner; cloud providers are optional bridges.
+DEFAULT_PROVIDER_ID = "ollama"
 
 
 class LLMError(Exception):
@@ -231,3 +246,109 @@ def build_anthropic_client(api_key: str,
         return text
 
     return complete
+
+
+def default_model_for(provider_id: str) -> str:
+    """Provider default model name ("" for offline/unknown)."""
+    provider = normalize_provider(provider_id)
+    return {
+        "ollama": DEFAULT_OLLAMA_MODEL,
+        "openai": DEFAULT_OPENAI_MODEL,
+        "gemini": DEFAULT_GEMINI_MODEL,
+        "anthropic": DEFAULT_ANTHROPIC_MODEL,
+    }.get(provider, "")
+
+
+@dataclass(frozen=True)
+class LLMProvider:
+    """One standardized reasoning provider (Phase 2).
+
+    ``id`` is a normalized provider id (see :data:`PROVIDER_IDS`);
+    ``model`` is the effective model name (provider default when the
+    caller passes a blank); ``endpoint`` is the effective base URL for
+    self-hosted Ollama (loopback default when blank, ignored by cloud
+    providers). Use :meth:`build` for a completion callable, or the
+    module-level :func:`build_llm_client` shortcut.
+    """
+
+    id: str = DEFAULT_PROVIDER_ID
+    model: str = DEFAULT_OLLAMA_MODEL
+    endpoint: str = DEFAULT_OLLAMA_ENDPOINT
+
+    def __post_init__(self) -> None:
+        provider = normalize_provider(self.id)
+        object.__setattr__(self, "id", provider)
+        model = (self.model or "").strip() or default_model_for(provider)
+        object.__setattr__(self, "model", model)
+        endpoint = (self.endpoint or "").strip()
+        if provider == "ollama" and not endpoint:
+            endpoint = DEFAULT_OLLAMA_ENDPOINT
+        object.__setattr__(self, "endpoint", endpoint.rstrip("/") if endpoint else "")
+
+    @property
+    def needs_api_key(self) -> bool:
+        """True for cloud bridges (openai/gemini/anthropic)."""
+        return self.id in ("openai", "gemini", "anthropic")
+
+    @property
+    def is_live(self) -> bool:
+        """False for the offline scaffold, True for any live provider."""
+        return self.id != "offline"
+
+    def build(self, api_key: str = "") -> LLMFn | None:
+        """Build the completion callable (None when unusable).
+
+        Returns None for the offline scaffold and for cloud providers
+        without an API key — the caller then falls back to the
+        :class:`mimir.detective.FallbackOfflineStub`.
+        """
+        if self.id == "offline":
+            return None
+        if self.id == "ollama":
+            return build_ollama_client(endpoint=self.endpoint, model=self.model)
+        key = (api_key or "").strip()
+        if not key:
+            return None
+        if self.id == "openai":
+            return build_openai_client(api_key=key, model=self.model)
+        if self.id == "gemini":
+            return build_gemini_client(api_key=key, model=self.model)
+        if self.id == "anthropic":
+            return build_anthropic_client(api_key=key, model=self.model)
+        return None  # unreachable: normalize_provider guards the id
+
+
+#: The stock Phase-2 provider: on-device Ollama running Llama-3.2.
+DEFAULT_PROVIDER = LLMProvider()
+
+
+def build_llm_client(
+    provider: str,
+    *,
+    model: str = "",
+    endpoint: str = "",
+    api_key: str = "",
+) -> LLMFn | None:
+    """Build a completion callable for ``provider`` (None when unusable).
+
+    ``provider`` accepts persisted ids and long Settings labels (see
+    :func:`normalize_provider`); blank model/endpoint fall back to the
+    provider defaults. Cloud providers without ``api_key`` yield None.
+    """
+    return LLMProvider(id=provider, model=model,
+                       endpoint=endpoint).build(api_key=api_key)
+
+
+def provider_from_prefs(prefs: Any) -> LLMProvider:
+    """Standardize user prefs into one :class:`LLMProvider`.
+
+    Reads ``model_provider`` / ``model_name`` / ``model_endpoint``
+    (missing attributes degrade to the offline scaffold, never raise).
+    """
+    try:
+        provider = getattr(prefs, "model_provider", "offline") or "offline"
+        model = getattr(prefs, "model_name", "") or ""
+        endpoint = getattr(prefs, "model_endpoint", "") or ""
+    except Exception:
+        return LLMProvider(id="offline", model="", endpoint="")
+    return LLMProvider(id=provider, model=model, endpoint=endpoint)

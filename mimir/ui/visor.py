@@ -5,6 +5,11 @@ headless-testable) mapping MIMIR's cognitive states to colors;
 :func:`create_visor_widget` renders it as an always-on-top frameless
 Qt pill. Qt (PyQt6 preferred, PySide6 fallback) imports lazily inside
 the factory so the controller works anywhere.
+
+Phase 5 drives the same machine through the five-state voice model
+(RESTING / LISTENING / THINKING / ACTING / HALTED): ACTING and HALTED
+are aliases for the live DRIVING and ALERT faces (see
+:data:`PHASE5_TO_VISOR`, :func:`phase5_of`, :func:`set_phase5_state`).
 """
 
 from __future__ import annotations
@@ -16,13 +21,19 @@ from threading import Lock
 from typing import Any, Callable, Optional
 
 __all__ = [
+    "PHASE5_LABELS",
+    "PHASE5_STATES",
+    "PHASE5_TO_VISOR",
     "VISOR_COLORS",
     "VISOR_LABELS",
+    "VISOR_TO_PHASE5",
     "VisorController",
     "VisorError",
     "VisorState",
     "create_visor_widget",
+    "phase5_of",
     "run_visor",
+    "set_phase5_state",
 ]
 
 
@@ -59,17 +70,105 @@ VISOR_LABELS: dict[VisorState, str] = {
     VisorState.ALERT: "Alert",
 }
 
+#: Phase-5 five-state voice/visor model. The live six-state machine
+#: stays the source of truth; these names map onto it so voice hosts
+#: can drive RESTING / LISTENING / THINKING / ACTING / HALTED without
+#: learning the legacy DRIVING / ALERT spellings.
+PHASE5_STATES: tuple[str, ...] = (
+    "resting",
+    "listening",
+    "thinking",
+    "acting",
+    "halted",
+)
+
+#: Phase-5 name -> live visor value. ACTING is the live DRIVING face
+#: (amber, executing) and HALTED is the live ALERT face (red,
+#: E-stopped); the other three are identity mappings.
+PHASE5_TO_VISOR: dict[str, str] = {
+    "resting": "resting",
+    "listening": "listening",
+    "thinking": "thinking",
+    "acting": "driving",
+    "halted": "alert",
+}
+
+#: Live visor value -> Phase-5 name. OBSERVING (idle watch) reads as
+#: Phase-5 RESTING; DRIVING reads as ACTING and ALERT as HALTED.
+VISOR_TO_PHASE5: dict[str, str] = {
+    "resting": "resting",
+    "observing": "resting",
+    "listening": "listening",
+    "thinking": "thinking",
+    "driving": "acting",
+    "alert": "halted",
+}
+
+#: Human labels for the Phase-5 five-state model.
+PHASE5_LABELS: dict[str, str] = {
+    "resting": "Resting",
+    "listening": "Listening",
+    "thinking": "Thinking",
+    "acting": "Acting",
+    "halted": "Halted",
+}
+
 
 def _coerce_state(state: VisorState | str) -> VisorState:
     if isinstance(state, VisorState):
         return state
     if isinstance(state, str):
+        cleaned = state.strip().lower()
+        # Phase-5 aliases: ACTING -> DRIVING, HALTED -> ALERT.
+        mapped = PHASE5_TO_VISOR.get(cleaned, cleaned)
         try:
-            return VisorState(state.strip().lower())
+            return VisorState(mapped)
         except ValueError:
             pass
     valid = sorted(s.value for s in VisorState)
     raise ValueError(f"state: expected one of {valid}, got {state!r}")
+
+
+def phase5_of(state: VisorState | str) -> str:
+    """Phase-5 name for a live visor state (``acting``/``halted``...).
+
+    Accepts a :class:`VisorState` or any string :func:`set_state`
+    accepts (including the Phase-5 aliases themselves), so hosts can
+    normalize either spelling to the five-state model. OBSERVING
+    reads as ``resting`` (idle).
+    """
+    resolved = _coerce_state(state)
+    return VISOR_TO_PHASE5[resolved.value]
+
+
+def set_phase5_state(controller: Any, state: str) -> str:
+    """Drive a visor controller with a Phase-5 state name.
+
+    ``controller`` is duck-typed (only ``set_state`` is used) so the
+    helper stays Qt-free and headless-testable. Returns the live
+    visor value applied (``acting`` -> ``driving``, ...). Raises
+    :class:`ValueError` for unknown Phase-5 names.
+    """
+    if not isinstance(state, str):
+        raise ValueError(
+            "state: expected one of "
+            f"{sorted(PHASE5_STATES)}, got {state!r}"
+        )
+    cleaned = state.strip().lower()
+    if cleaned not in PHASE5_TO_VISOR:
+        raise ValueError(
+            "state: expected one of "
+            f"{sorted(PHASE5_STATES)}, got {state!r}"
+        )
+    target = PHASE5_TO_VISOR[cleaned]
+    setter = getattr(controller, "set_state", None)
+    if not callable(setter):
+        raise ValueError(
+            "controller: expected an object with set_state(), "
+            f"got {type(controller).__name__}"
+        )
+    setter(target)
+    return target
 
 
 class VisorController:
@@ -97,6 +196,20 @@ class VisorController:
     @property
     def label(self) -> str:
         return VISOR_LABELS[self._state]
+
+    @property
+    def phase5(self) -> str:
+        """This controller's state in the Phase-5 five-state model."""
+        return VISOR_TO_PHASE5[self._state.value]
+
+    @property
+    def phase5_label(self) -> str:
+        """Human label for :attr:`phase5` (Acting/Halted/...)."""
+        return PHASE5_LABELS[VISOR_TO_PHASE5[self._state.value]]
+
+    def set_phase5(self, state: str) -> str:
+        """Transition via a Phase-5 name; returns the live value."""
+        return set_phase5_state(self, state)
 
     def set_state(self, state: VisorState | str) -> None:
         """Transition; notifies once, skipping no-op assignments."""
@@ -406,7 +519,7 @@ def create_visor_widget(
             act_roam.setChecked(self._auto_roam)
 
             menu.addSeparator()
-            act_open = menu.addAction("✦  Open Habitous Desktop")
+            act_open = menu.addAction("✦  Open MIMIR Desktop")
             act_hide = menu.addAction("✕  Hide Habi")
 
             try:

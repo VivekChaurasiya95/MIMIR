@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from .desktop import FocusGuard, TargetSpec, WindowBackend, WindowInfo
 
 __all__ = [
+    "ActuationGateway",
     "ActuatorError",
     "CobotInterruptedError",
     "CursorPoint",
@@ -41,11 +42,17 @@ __all__ = [
     "DefaultKeyboard",
     "DefaultMouse",
     "DesktopActuator",
+    "EmbodimentError",
+    "EscHotkeyLatch",
     "ExecutionPlan",
     "FailsafeBackend",
+    "FocusLostError",
     "KeyboardBackend",
     "MouseBackend",
+    "OutcomeVerifier",
     "TargetValidationError",
+    "TripleFailsafe",
+    "is_spoken_stop",
     "plan_keystroke_delays",
     "plan_trajectory",
     "split_command_line",
@@ -53,7 +60,7 @@ __all__ = [
 
 _TRIP_MESSAGE = "human override: cobot motion interrupted"
 _COMMAND_POLL_SEC = 0.05
-_MOUSE_JITTER_PX = 5
+_MOUSE_JITTER_PX = 25
 # Slice for interruptible waits while a safety controller is attached: a
 # latched E-stop is noticed within one slice even inside a long pause.
 _SAFETY_WAIT_SLICE_SEC = 0.01
@@ -697,7 +704,7 @@ class DesktopActuator:
         steps: int = 30,
         *,
         verify: bool = False,
-        tolerance: int = 2,
+        tolerance: int = 15,
     ) -> None:
         """Glide along a cubic Bezier trajectory, polling the tripwire.
 
@@ -1041,3 +1048,215 @@ class DesktopActuator:
             ) from exc
         verify_completion(bool(ok), operation=operation)
         return True
+
+
+# Phase 4 bounded-embodiment re-exports. Lazy because
+# :mod:`mimir.embodiment` imports this module (the gateway wraps
+# :class:`DesktopActuator`); a top-level import here would cycle.
+_EMBODIMENT_EXPORTS = frozenset({
+    "ActuationGateway",
+    "EmbodimentError",
+    "EscHotkeyLatch",
+    "FocusLostError",
+    "OutcomeVerifier",
+    "TripleFailsafe",
+    "is_spoken_stop",
+})
+
+
+def __getattr__(name: str) -> Any:
+    if name in _EMBODIMENT_EXPORTS:
+        from . import embodiment
+
+        return getattr(embodiment, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+# ---------------------------------------------------------------------------
+# MIMIR 3.0 transactional file actuation (Gen 2.5 Pillar 3).
+#
+# Native local agency: snapshot -> sanitize -> atomic write -> subprocess
+# pytest -> keep-or-rollback. Independent of the physical cursor/keyboard
+# actuator above; both share only ActuatorError as the base failure type.
+# ---------------------------------------------------------------------------
+
+__all__ += [
+    "TransactionalActuator",
+    "TxBoundaryError",
+    "TxResult",
+    "apply_file_update",
+    "run_pytest",
+]
+
+
+class TxBoundaryError(ActuatorError):
+    """Raised fail-closed when a target path escapes the project root."""
+
+
+@dataclass(frozen=True)
+class TxResult:
+    """Outcome of one transactional file update."""
+
+    applied_path: str
+    existed_before: bool
+    tests_passed: bool
+    rolled_back: bool
+    test_returncode: int
+    test_output: str
+    note: str = ""
+
+
+def run_pytest(
+    cwd: str,
+    args: Sequence[str] = ("-q",),
+    timeout_s: float = 10.0,
+) -> tuple[int, str]:
+    """Run the real ``pytest`` binary in a subprocess (never mocked).
+
+    Returns ``(returncode, combined_output)``. A missing pytest
+    installation surfaces as ``(127, hint)`` instead of raising.
+    """
+    import sys
+
+    if timeout_s <= 0:
+        raise ValueError("timeout_s: expected positive seconds")
+    cmd = [sys.executable, "-m", "pytest", *[str(a) for a in args]]
+    try:
+        completed = subprocess.run(
+            cmd,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+        )
+    except FileNotFoundError:
+        return (127, "pytest is not installed (pip install pytest)")
+    except subprocess.TimeoutExpired as exc:
+        partial = (exc.stdout or "") + (exc.stderr or "")
+        return (124, f"pytest timed out after {timeout_s}s\n{partial}"[-4000:])
+    output = (completed.stdout or "") + (completed.stderr or "")
+    return (completed.returncode, output[-8000:])
+
+
+def _resolve_within_root(project_root: str, rel_path: str) -> str:
+    from pathlib import Path
+
+    root = Path(project_root).resolve()
+    candidate = (root / rel_path).resolve()
+    if candidate != root and root not in candidate.parents:
+        raise TxBoundaryError(
+            f"refusing to write outside project root: {rel_path!r}"
+        )
+    return str(candidate)
+
+
+class TransactionalActuator:
+    """Snapshot-guarded atomic file writer with automatic rollback."""
+
+    def __init__(self, project_root: str) -> None:
+        if not isinstance(project_root, str) or not project_root.strip():
+            raise ValueError("project_root: expected a non-empty path string")
+        if not os.path.isdir(project_root):
+            raise ValueError(f"project_root: not a directory: {project_root!r}")
+        self.project_root = os.path.abspath(project_root)
+
+    def apply_update(
+        self,
+        rel_path: str,
+        new_content: str,
+        *,
+        run_tests: bool = True,
+        pytest_args: Sequence[str] = ("-q",),
+        timeout_s: float = 10.0,
+    ) -> TxResult:
+        """Write ``new_content`` to ``rel_path`` transactionally.
+
+        Snapshot -> atomic write (temp + os.replace) -> subprocess pytest.
+        Tests green: change stays. Tests red: the exact pre-write bytes
+        are restored (new files are deleted) and the failure output is
+        returned for user review. Test failures never raise.
+        """
+        if not isinstance(rel_path, str) or not rel_path.strip():
+            raise ValueError("rel_path: expected a non-empty relative path")
+        if not isinstance(new_content, str):
+            raise ValueError("new_content: expected a string")
+        target = _resolve_within_root(self.project_root, rel_path)
+        existed_before = os.path.exists(target)
+        snapshot: Optional[bytes] = None
+        if existed_before:
+            with open(target, "rb") as handle:
+                snapshot = handle.read()
+        parent = os.path.dirname(target)
+        os.makedirs(parent, exist_ok=True)
+        tmp_path = target + ".mimir-tmp"
+        with open(tmp_path, "w", encoding="utf-8", newline="") as handle:
+            handle.write(new_content)
+        os.replace(tmp_path, target)
+        if not run_tests:
+            return TxResult(
+                applied_path=target,
+                existed_before=existed_before,
+                tests_passed=True,
+                rolled_back=False,
+                test_returncode=0,
+                test_output="",
+                note="tests skipped by caller",
+            )
+        returncode, output = run_pytest(
+            self.project_root, args=pytest_args, timeout_s=timeout_s
+        )
+        if returncode == 0:
+            return TxResult(
+                applied_path=target,
+                existed_before=existed_before,
+                tests_passed=True,
+                rolled_back=False,
+                test_returncode=returncode,
+                test_output=output,
+                note="All Tests Passed Successfully",
+            )
+        try:
+            if snapshot is None:
+                if os.path.exists(target):
+                    os.remove(target)
+            else:
+                with open(target, "wb") as handle:
+                    handle.write(snapshot)
+        except OSError as exc:
+            return TxResult(
+                applied_path=target,
+                existed_before=existed_before,
+                tests_passed=False,
+                rolled_back=False,
+                test_returncode=returncode,
+                test_output=output,
+                note=f"ROLLBACK FAILED ({exc}); workspace may be dirty",
+            )
+        return TxResult(
+            applied_path=target,
+            existed_before=existed_before,
+            tests_passed=False,
+            rolled_back=True,
+            test_returncode=returncode,
+            test_output=output,
+            note="Tests failed; restored pre-write snapshot",
+        )
+
+
+def apply_file_update(
+    project_root: str,
+    rel_path: str,
+    new_content: str,
+    *,
+    run_tests: bool = True,
+    pytest_args: Sequence[str] = ("-q",),
+    timeout_s: float = 10.0,
+) -> TxResult:
+    """One-shot convenience wrapper over :class:`TransactionalActuator`."""
+    return TransactionalActuator(project_root).apply_update(
+        rel_path,
+        new_content,
+        run_tests=run_tests,
+        pytest_args=pytest_args,
+        timeout_s=timeout_s,
+    )

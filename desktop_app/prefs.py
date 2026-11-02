@@ -14,13 +14,18 @@ from typing import Any
 
 __all__ = [
     "DEFAULT_PREFS_PATH",
+    "LEGACY_PREFS_PATH",
     "DesktopPrefs",
     "MAX_RECENT_TASKS",
     "MODEL_PROVIDERS",
 ]
 
 MAX_RECENT_TASKS = 20
-DEFAULT_PREFS_PATH = str(Path.home() / ".habitous" / "desktop.json")
+DEFAULT_PREFS_PATH = str(Path.home() / ".mimir" / "desktop.json")
+
+#: Pre-rename prefs location (Phase 0 brand unification); :meth:`DesktopPrefs.load`
+#: falls back to it once so existing installs keep their settings.
+LEGACY_PREFS_PATH = str(Path.home() / ".habitous" / "desktop.json")
 
 #: Short provider ids persisted in ``DesktopPrefs.model_provider``.
 MODEL_PROVIDERS = ("offline", "openai", "anthropic", "gemini", "ollama")
@@ -72,7 +77,7 @@ class DesktopPrefs:
     def load(cls, path: str = DEFAULT_PREFS_PATH) -> "DesktopPrefs":
         target = Path(path)
         if not target.exists() and path == DEFAULT_PREFS_PATH:
-            legacy = Path.home() / ".mimir" / "desktop.json"
+            legacy = Path(LEGACY_PREFS_PATH)
             if legacy.exists():
                 target = legacy
         try:

@@ -151,7 +151,7 @@ def query_local_llama_intent(
     actions_str = "\n".join(actions_lines) or "No pending actions"
 
     system_prompt = (
-        "You are the Natural Language Intent Parser for Habitous / MIMIR, a 100% on-device developer cobot.\n"
+        "You are the Natural Language Intent Parser for MIMIR / MIMIR, a 100% on-device developer cobot.\n"
         "Your task is to classify the user's spoken or typed instruction into a structured JSON action.\n\n"
         "AVAILABLE INTENTS:\n"
         "- APPROVE_PENDING_ACTION: User confirms, agrees, or wants to proceed with a proposed action (e.g. 'go ahead', 'do it', 'looks good', 'proceed', 'run that').\n"

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
-from typing import Any, Literal, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Literal, Optional, Sequence
 
 from .ast_delta import AstObserver
 from .cadence import CadenceObserver
@@ -22,6 +22,9 @@ from .devstate import DeveloperStateEngine
 from .events import Event, EventBus, EventType, Subscription, get_event_bus
 from .git_observe import GitObserver
 from .watch_fs import DEFAULT_DEBOUNCE_S, FilesystemWatcher
+
+if TYPE_CHECKING:
+    from .privacy import PrivacyGate
 
 __all__ = ["SensoryService"]
 
@@ -43,9 +46,16 @@ class SensoryService:
         git_poll_interval_s: float = 5.0,
         enable_cadence: bool = False,
         debounce_s: float = DEFAULT_DEBOUNCE_S,
+        privacy_gate: Optional["PrivacyGate"] = None,
     ) -> None:
         self.bus = bus if bus is not None else get_event_bus()
         self.session_id = session_id
+        gate = privacy_gate
+        if gate is None and allowed_roots is not None:
+            from .privacy import PrivacyGate as _Gate
+
+            gate = _Gate(allowed_roots)
+        self.privacy_gate = gate
         self.watcher = FilesystemWatcher(
             roots,
             bus=self.bus,
@@ -53,8 +63,10 @@ class SensoryService:
             backend=fs_backend,
             poll_interval_s=poll_interval_s,
             debounce_s=debounce_s,
+            privacy_gate=gate,
         )
-        self.ast = AstObserver(bus=self.bus, session_id=session_id)
+        self.ast = AstObserver(
+            bus=self.bus, session_id=session_id, privacy_gate=gate)
         self.cadence = CadenceObserver(bus=self.bus, session_id=session_id)
         if enable_cadence:
             self.cadence.enable()
@@ -118,6 +130,7 @@ class SensoryService:
 
     def status(self) -> dict[str, Any]:
         """Introspection snapshot (no file contents)."""
+        gate = self.privacy_gate
         return {
             "running": self.running,
             "fs_backend": self.watcher.backend,
@@ -125,6 +138,8 @@ class SensoryService:
             "git_backend": self.git.backend if self.git else None,
             "cadence_enabled": self.cadence.is_enabled,
             "ast_tracked_files": len(self.ast.tracked_paths()),
+            "privacy_gated": gate is not None,
+            "allowed_roots": list(gate.allowed_roots) if gate else [],
             "state_provenance": {
                 k: v.value for k, v in
                 self.engine.state.provenance.items()

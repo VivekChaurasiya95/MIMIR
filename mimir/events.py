@@ -65,6 +65,7 @@ __all__ = [
     "EVENT_FAMILY",
     "EVENT_TYPES",
     "EventValidationError",
+    "PHASE5_VISOR_BY_EVENT",
     "Subscription",
     "bind_visor_to_bus",
     "create_event",
@@ -975,6 +976,36 @@ _VISOR_BY_EVENT: dict[EventType, str] = {
     EventType.SAFETY_STATE_CHANGED: "alert",
 }
 
+#: Phase-5 five-state reading of :data:`_VISOR_BY_EVENT` (live values
+#: mapped through ``acting``/``halted``): voice capture reads
+#: LISTENING, parsed intents read THINKING, execution reads ACTING,
+#: and safety trips read HALTED.
+PHASE5_VISOR_BY_EVENT: dict[EventType, str] = {
+    EventType.FILE_CREATED: "resting",
+    EventType.FILE_MODIFIED: "resting",
+    EventType.FILE_DELETED: "resting",
+    EventType.AST_DELTA: "thinking",
+    EventType.GIT_CHANGED: "resting",
+    EventType.CADENCE_UPDATED: "resting",
+    EventType.DEVELOPER_STATE_UPDATED: "resting",
+    EventType.VOICE_CAPTURED: "listening",
+    EventType.TRANSCRIPTION_COMPLETED: "listening",
+    EventType.INTENT_PARSED: "thinking",
+    EventType.PATTERN_DETECTED: "thinking",
+    EventType.INFERENCE_COMPLETED: "thinking",
+    EventType.ACTION_PROPOSED: "thinking",
+    EventType.ACTION_CONFIRMATION_RECEIVED: "thinking",
+    EventType.ACTION_REQUESTED: "thinking",
+    EventType.ACTION_AUTHORIZED: "thinking",
+    EventType.ACTION_STARTED: "acting",
+    EventType.ACTION_COMPLETED: "resting",
+    EventType.ACTION_FAILED: "resting",
+    EventType.E_STOP_TRIGGERED: "halted",
+    EventType.ACTUATION_CANCELLED: "halted",
+    EventType.TARGET_VALIDATION_FAILED: "halted",
+    EventType.SAFETY_STATE_CHANGED: "halted",
+}
+
 
 def bind_visor_to_bus(
     controller: Any,
@@ -984,7 +1015,11 @@ def bind_visor_to_bus(
     """Mirror runtime events onto a visor state machine (opt-in wiring).
 
     ``controller`` is duck-typed (only ``set_state`` is used) so the
-    binding stays Qt-free and headless-testable.
+    binding stays Qt-free and headless-testable. The mapping is the
+    live six-state spelling (``driving``/``alert`` for execution and
+    safety); Phase-5 hosts may read the same binding through
+    :data:`PHASE5_VISOR_BY_EVENT` (``acting``/``halted``) — both
+    spellings drive the same faces.
 
     Bridge 4 / Phase 4.3 micro-animation: on AST_DELTA, the visor shifts to
     THINKING (purple) for 1.5s then returns to the base state.

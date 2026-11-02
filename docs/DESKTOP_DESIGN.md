@@ -1,6 +1,6 @@
 # MIMIR Desktop Application: UI/UX Design Specification & Architecture
 
-> **Document:** `desktop_app/DESIGN.md`  
+> **Document:** `docs/DESKTOP_DESIGN.md`  
 > **Status:** Active Reference & Production Specification  
 > **Aesthetic Philosophy:** *Serene Porcelain — Calm, Humane, Transparent & Tactile.*  
 > **Visual Assets Directory:** [`desktop_app/assets/ui/`](file:///d:/Projects/MIMIR/desktop_app/assets/ui/)

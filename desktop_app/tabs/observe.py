@@ -67,13 +67,13 @@ def build_observe_tab(state: AppState, status: Any,
     _, _, _, QtWidgets = load_qt()
     root, layout = page()
     layout.addWidget(page_head(
-        "Observe", "Control what Habitous can see.",
+        "Observe", "Control what MIMIR can see.",
         "Choose your workspace, manage observation, and review captured sessions."))
 
     layout.addWidget(functionality_banner(
         "👁",
         "Autonomous Session Observation",
-        "Habitous watches file transitions, git commits, and terminal activity in your authorized "
+        "MIMIR watches file transitions, git commits, and terminal activity in your authorized "
         "workspace folders, converting raw developer actions into structured behavioral episodes.",
         pills=[("Git Telemetry", "confirmed"), ("Zero-Cloud Ingestion", "confirmed"), ("AST Analysis", "learning")],
         icon_cls="icon_box_purple",
@@ -176,7 +176,7 @@ def build_observe_tab(state: AppState, status: Any,
     apps_lay.setContentsMargins(0, 0, 0, 0)
     apps_lay.setSpacing(10)
     apps_hint = QtWidgets.QLabel(
-        "Folders Habitous may observe. Switch one off to exclude it from "
+        "Folders MIMIR may observe. Switch one off to exclude it from "
         "watching without deleting it.")
     apps_hint.setObjectName("muted")
     apps_hint.setWordWrap(True)
@@ -197,7 +197,7 @@ def build_observe_tab(state: AppState, status: Any,
 
     ws_card, ws_box = settings_group_card(
         "Workspace & Ingestion Configuration",
-        "Specify the local Git repository for Habitous to analyze and observe.",
+        "Specify the local Git repository for MIMIR to analyze and observe.",
     )
     ws_card.setMaximumWidth(700)
     repo_row = QtWidgets.QHBoxLayout()
@@ -255,7 +255,7 @@ def build_observe_tab(state: AppState, status: Any,
     ws_box.addWidget(feedback_banner)
     filters_lay.addWidget(ws_card)
 
-    guard_note = QtWidgets.QLabel("🔒 Habitous automatically filters secret tokens, API keys, and binaries locally on this device.")
+    guard_note = QtWidgets.QLabel("🔒 MIMIR automatically filters secret tokens, API keys, and binaries locally on this device.")
     guard_note.setObjectName("subtle")
     filters_lay.addWidget(guard_note)
 
@@ -762,7 +762,7 @@ def build_observe_tab(state: AppState, status: Any,
             status.showMessage(f"Observed {count} episode(s) from {Path(repo_path).name}.", 5000)
             render_feed()
             render_scopes()
-            if cb is not None:
+            if callable(cb):
                 cb()
 
         def _observe_fail(message: str) -> None:
@@ -791,6 +791,8 @@ def build_observe_tab(state: AppState, status: Any,
         except Exception as exc:
             _observe_fail(str(exc))
 
+    _learn_workers: list[Any] = []  # single-flight mining worker
+
     def _do_learn() -> None:
         if not state.episodes:
             status.showMessage("No commit history found to learn from. Try increasing commit depth.", 6000)
@@ -801,45 +803,121 @@ def build_observe_tab(state: AppState, status: Any,
             )
             feedback_banner.setVisible(True)
             return
+        if _learn_workers:
+            status.showMessage("Already mining principles…", 4000)
+            return
+        # Phase 2: live LLM induction runs on a LearnWorker (one model
+        # call per cluster can block for minutes); the UI thread only
+        # snapshots episodes/prefs here and commits there.
+        from mimir.principles import BehavioralPrinciple
+
+        from ..observe_worker import create_learn_worker
+
+        try:
+            episode_dicts = [e.to_dict() for e in state.episodes]
+        except Exception as exc:
+            status.showMessage(f"Learn failed: {exc}", 8000)
+            return
+        llm_prefs = {
+            "model_provider": state.prefs.model_provider,
+            "model_name": state.prefs.model_name,
+            "model_endpoint": state.prefs.model_endpoint,
+            "api_key": state.prefs.api_key,
+        }
+        worker = create_learn_worker(
+            episode_dicts, min_cluster_size=1, llm_prefs=llm_prefs,
+            parent=root)
+        _learn_workers.append(worker)
         learn_btn.setEnabled(False)
         learn_btn.setText("🧠 Mining principles…")
         obs_visor_face.set_state("thinking")
         status.showMessage("Inductive Detective mining behavioral principles…", 4000)
-        try:
-            principles = state.learn(min_cluster_size=1)
-        except Exception as exc:
+
+        def _release() -> None:
+            try:
+                _learn_workers.remove(worker)
+            except ValueError:
+                pass
+            try:
+                worker.deleteLater()
+            except Exception:
+                pass
+
+        def _restore_buttons() -> None:
             learn_btn.setEnabled(True)
             learn_btn.setText("🧠 Learn Principles")
+
+        def _learn_failed(message: str) -> None:
+            _restore_buttons()
             obs_visor_face.set_state("alert")
-            status.showMessage(f"Learn failed: {exc}", 8000)
-            feedback_banner.setText(f"Learn failed: {exc}")
+            status.showMessage(f"Learn failed: {message}", 8000)
+            feedback_banner.setText(f"Learn failed: {message}")
             feedback_banner.setStyleSheet(
                 "color: #991B1B; font-size: 13px; font-weight: 500; background: #FEF2F2; "
                 "border: 1px solid #FECACA; border-radius: 8px; padding: 10px 14px; margin-top: 6px;"
             )
             feedback_banner.setVisible(True)
-            return
 
-        learn_btn.setEnabled(True)
-        learn_btn.setText("🧠 Learn Principles")
-        obs_visor_face.set_state("resting")
-        count = len(principles)
-        feedback_banner.setText(
-            f"🎉 Successfully learned {count} behavioral principle(s)! Click 'View in Memory →' to inspect."
-        )
-        feedback_banner.setStyleSheet(
-            "color: #065F46; font-size: 13px; font-weight: 600; background: #ECFDF5; "
-            "border: 1px solid #A7F3D0; border-radius: 8px; padding: 10px 14px; margin-top: 6px;"
-        )
-        feedback_banner.setVisible(True)
-        view_btn.setEnabled(True)
-        view_btn.setStyleSheet(
-            "background: #4F46E5; color: white; border: 0; border-radius: 8px; "
-            "padding: 6px 16px; font-weight: 600; font-size: 13px; min-height: 22px;"
-        )
-        status.showMessage(f"Learned {count} principle(s) stored in Behavioral Memory.", 6000)
-        chime()
-        render_feed()
+        def _mined(payload: object) -> None:
+            _release()
+            if not isinstance(payload, dict):
+                _learn_failed("miner returned an unexpected result")
+                return
+            try:
+                principles = [BehavioralPrinciple.from_dict(d)
+                              for d in payload.get("principles", [])]
+                episode_ids = list(payload.get("episode_ids", []))
+            except Exception as exc:
+                _learn_failed(f"miner result failed validation: {exc}")
+                return
+            try:
+                stored = state.commit_principles(principles, episode_ids)
+            except Exception as exc:
+                _learn_failed(str(exc))
+                return
+            _restore_buttons()
+            obs_visor_face.set_state("resting")
+            count = len(stored)
+            fell_back = bool(payload.get("fell_back"))
+            note = ""
+            if fell_back:
+                cause = str(payload.get("live_error", "") or "").strip()[:160]
+                note = (" Live model unavailable — offline scaffold used"
+                        + (f": {cause}" if cause else "") + ".")
+            feedback_banner.setText(
+                f"🎉 Successfully learned {count} behavioral principle(s)! Click 'View in Memory →' to inspect.{note}"
+            )
+            feedback_banner.setStyleSheet(
+                "color: #065F46; font-size: 13px; font-weight: 600; background: #ECFDF5; "
+                "border: 1px solid #A7F3D0; border-radius: 8px; padding: 10px 14px; margin-top: 6px;"
+            )
+            feedback_banner.setVisible(True)
+            view_btn.setEnabled(True)
+            view_btn.setStyleSheet(
+                "background: #4F46E5; color: white; border: 0; border-radius: 8px; "
+                "padding: 6px 16px; font-weight: 600; font-size: 13px; min-height: 22px;"
+            )
+            status.showMessage(
+                f"Learned {count} principle(s) stored in Behavioral Memory."
+                + (" Live model unavailable; used offline scaffold." if fell_back else ""),
+                6000)
+            chime()
+            render_feed()
+
+        def _failed(message: str) -> None:
+            _release()
+            _learn_failed(message)
+
+        def _cancelled() -> None:
+            _release()
+            _restore_buttons()
+            obs_visor_face.set_state("resting")
+            status.showMessage("Mining cancelled.", 4000)
+
+        worker.learn_finished.connect(_mined)
+        worker.learn_error.connect(_failed)
+        worker.learn_cancelled.connect(_cancelled)
+        worker.start()
 
     def on_learn() -> None:
         if not state.episodes:
@@ -870,7 +948,7 @@ def build_observe_tab(state: AppState, status: Any,
     timeframe.currentTextChanged.connect(lambda _t: render_feed())
     repo_browse.clicked.connect(on_browse_repo)
     watch_btn.clicked.connect(on_watch)
-    once_btn.clicked.connect(on_observe_now)
+    once_btn.clicked.connect(lambda _checked=False: on_observe_now())
     learn_btn.clicked.connect(on_learn)
     view_btn.clicked.connect(lambda: navigate("memory"))
     add_btn.clicked.connect(on_add_folder)

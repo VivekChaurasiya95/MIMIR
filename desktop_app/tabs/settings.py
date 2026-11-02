@@ -44,7 +44,7 @@ def build_settings_tab(state: AppState, status: Any) -> Any:
     root, layout = page()
     layout.addWidget(page_head(
         "Settings", "Customize your experience.",
-        "Fine-tune how Habitous looks, sounds, reasons, and integrates with your machine."))
+        "Fine-tune how MIMIR looks, sounds, reasons, and integrates with your machine."))
 
     body = QtWidgets.QHBoxLayout()
     body.setSpacing(20)
@@ -148,7 +148,7 @@ def build_settings_tab(state: AppState, status: Any) -> Any:
     # Card 2: Application Lifecycle
     life_card, life_box = settings_group_card(
         "System Lifecycle & Tray Integration",
-        "Control how Habitous launches and resides in your operating system environment.",
+        "Control how MIMIR launches and resides in your operating system environment.",
     )
     launch_toggle = toggle(state.prefs.start_on_launch)
     tray_toggle = toggle(state.prefs.show_in_tray)
@@ -156,12 +156,12 @@ def build_settings_tab(state: AppState, status: Any) -> Any:
 
     life_box.addWidget(setting_row(
         "Start on system launch",
-        "Quietly boot Habitous when you sign into your operating system so observation is always ready.",
+        "Quietly boot MIMIR when you sign into your operating system so observation is always ready.",
         launch_toggle,
     ))
     life_box.addWidget(setting_row(
         "Show in system tray",
-        "Minimize Habitous to the system notification tray instead of quitting when the window is closed.",
+        "Minimize MIMIR to the system notification tray instead of quitting when the window is closed.",
         tray_toggle,
     ))
     life_box.addWidget(setting_row(
@@ -223,7 +223,7 @@ def build_settings_tab(state: AppState, status: Any) -> Any:
                 "the window stays in the taskbar.", 6000)
         elif on:
             status.showMessage(
-                "Habitous will minimize to the system tray.", 4000)
+                "MIMIR will minimize to the system tray.", 4000)
 
     launch_toggle.toggled.connect(on_launch_changed)
     tray_toggle.toggled.connect(on_tray_changed)
@@ -238,12 +238,12 @@ def build_settings_tab(state: AppState, status: Any) -> Any:
             version = "1.0.0"
         version_label.setText(
             f"Version {version} — up to date via pip (pip install -U mimir).")
-        status.showMessage(f"Habitous {version} is running.", 4000)
+        status.showMessage(f"MIMIR {version} is running.", 4000)
         box = QtWidgets.QMessageBox(root)
         box.setWindowTitle("Check for updates")
-        box.setText(f"Habitous {version} is installed.")
+        box.setText(f"MIMIR {version} is installed.")
         box.setInformativeText(
-            "Habitous updates ship through pip (no background updater "
+            "MIMIR updates ship through pip (no background updater "
             "phones home). To upgrade, run:\n\npip install -U mimir")
         copy_btn = box.addButton(
             "Copy upgrade command",

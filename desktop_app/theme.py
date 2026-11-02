@@ -1,4 +1,4 @@
-"""Design tokens + QSS implementing desktop_app/DESIGN.md section 3.
+"""Design tokens + QSS implementing docs/DESKTOP_DESIGN.md section 3.
 
 Qt-free: the PyQt6 shell renders these tokens as a Qt stylesheet, while
 headless tests assert the values stay in sync with the production spec.
@@ -16,7 +16,7 @@ __all__ = [
     "qt_stylesheet",
 ]
 
-#: Production palette (desktop_app/DESIGN.md 3.1). The ``PORCELAIN`` name is
+#: Production palette (docs/DESKTOP_DESIGN.md 3.1). The ``PORCELAIN`` name is
 #: kept for API stability; values follow the slate/indigo/lavender system.
 PORCELAIN: dict[str, str] = {
     # Canvas & surfaces
@@ -58,7 +58,7 @@ PORCELAIN: dict[str, str] = {
     "nav_active_text": "#4338CA",
 }
 
-#: Six production surfaces (desktop_app/DESIGN.md section 2).
+#: Six production surfaces (docs/DESKTOP_DESIGN.md section 2).
 #: Each entry: (tab_id, title, subtitle, core modules).
 
 #: Slate-midnight dark palette: same token keys as :data:`PORCELAIN`
@@ -229,7 +229,7 @@ TAB_DEFS: tuple[tuple[str, str, str, str], ...] = (
 def qt_stylesheet(theme: str = "light", accent: str = "Indigo") -> str:
     """Render the production tokens as a Qt stylesheet string.
 
-    Object names follow desktop_app/DESIGN.md section 6. Every bordered
+    Object names follow docs/DESKTOP_DESIGN.md section 6. Every bordered
     control is rounded; status is carried by soft tinted badges.
     ``theme`` selects the ``"light"`` (Porcelain) or ``"dark"`` (Slate
     Midnight) palette; ``accent`` selects one of the :data:`ACCENTS`

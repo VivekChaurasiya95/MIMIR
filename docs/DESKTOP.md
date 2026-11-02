@@ -3,16 +3,16 @@
 > PyQt6-native shell with the same serene porcelain UI as `web/`, and six
 > functional tabs wired 1:1 to the MIMIR core (`mimir/`).
 >
-> 📐 **UI/UX Design Specification:** See [`desktop_app/DESIGN.md`](file:///d:/Projects/MIMIR/desktop_app/DESIGN.md)  
-> 🖼️ **Visual Design Mockups:** See [`desktop_app/assets/ui/`](file:///d:/Projects/MIMIR/desktop_app/assets/ui/)
+> 📐 **UI/UX Design Specification:** See [`DESKTOP_DESIGN.md`](DESKTOP_DESIGN.md)  
+> 🖼️ **Visual Design Mockups:** See [`../desktop_app/assets/ui/`](../desktop_app/assets/ui/)
 
 ## 1. Why PyQt6 native
 
 - The visor (`mimir/ui/visor.py`) already targets PyQt6/PySide6 with lazy
   imports; the desktop shell reuses that dependency — no Electron/Node
   toolchain, no duplicated webview bridge.
-- Porcelain tokens from `DESIGN.md` / `web/index.css` render as a Qt
-  stylesheet (`desktop_app/theme.py`), so desktop and web stay visually
+- Porcelain tokens from `DESKTOP_DESIGN.md` / `../web/index.css` render as a Qt
+  stylesheet (`../desktop_app/theme.py`), so desktop and web stay visually
   in sync from one palette.
 - Core logic (`telemetry`, `detective`, `store`, `actor`, `actuator`,
   `voice`) is imported directly — no IPC, no REST layer to drift.
@@ -21,18 +21,18 @@
 
 | Screen | Spec | Core wiring | Key actions |
 |---|---|---|---|
-| Home | DESIGN.md 5.1 | `VisorController`, `memory_stats`, `respond`, `try_listen` | Serif greeting, status card + Start/Stop, explore bar + mic (preflight, auto-answer) + mute + Ask + chips, single-flight speech with Stop voice, KPI cards (lifetime sessions), action directory |
-| Observe | DESIGN.md 5.2 | `observe_git_repo`/`observe_new` → `infer_principles` → `save` | Watch banner, Sessions/Applications segmented, timeframe filter, session feed with badges, workspace card |
-| Memory | DESIGN.md 5.3 | `list_all`, `query_relevant`, `update_confidence`, `delete` | Search + category filter, principle cards with confidence badges, evidence drawer, calibrate/copy/delete |
-| Replicate | DESIGN.md 5.4 | `ReplicationActor.replicate` + `prefs.record_task` | Prompt panel + mic, project/principles/min-conf targeting, Generate, guided output, clickable recent-tasks feed |
-| Trust | DESIGN.md 5.5 | `redact_text`, scope prefs, `clear_memory` | Watched-folder switches, clickable storage/retention rows, confirmed emergency wipe, filter test |
-| Settings | DESIGN.md 5.6 | `DesktopPrefs`, extras probes, actuator dry-run | General/Voice/Model/Appearance/Shortcuts/Integrations panels, persisted to `~/.habitous/desktop.json`; launch/tray switches drive real OS login items + tray icon |
+| Home | DESKTOP_DESIGN.md 5.1 | `VisorController`, `memory_stats`, `respond`, `try_listen` | Serif greeting, status card + Start/Stop, explore bar + mic (preflight, auto-answer) + mute + Ask + chips, single-flight speech with Stop voice, KPI cards (lifetime sessions), action directory |
+| Observe | DESKTOP_DESIGN.md 5.2 | `observe_git_repo`/`observe_new` → `infer_principles` → `save` | Watch banner, Sessions/Applications segmented, timeframe filter, session feed with badges, workspace card |
+| Memory | DESKTOP_DESIGN.md 5.3 | `list_all`, `query_relevant`, `update_confidence`, `delete` | Search + category filter, principle cards with confidence badges, evidence drawer, calibrate/copy/delete |
+| Replicate | DESKTOP_DESIGN.md 5.4 | `ReplicationActor.replicate` + `prefs.record_task` | Prompt panel + mic, project/principles/min-conf targeting, Generate, guided output, clickable recent-tasks feed |
+| Trust | DESKTOP_DESIGN.md 5.5 | `redact_text`, scope prefs, `clear_memory` | Watched-folder switches, clickable storage/retention rows, confirmed emergency wipe, filter test |
+| Settings | DESKTOP_DESIGN.md 5.6 | `DesktopPrefs`, extras probes, actuator dry-run | General/Voice/Model/Appearance/Shortcuts/Integrations panels, persisted to `~/.mimir/desktop.json`; launch/tray switches drive real OS login items + tray icon |
 
 ## 3. Architecture
 
 ```
 desktop_app/
-  DESIGN.md        production UI/UX spec + component map (section 6)
+  (spec lives in docs/DESKTOP_DESIGN.md, section 6)
   assets/ui/       reference mockups (01–06, home hero, overview)
   __main__.py      python -m desktop_app [--store PATH]
   app.py           MainWindow: brand rail + scroll canvas (Qt only)

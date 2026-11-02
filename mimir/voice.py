@@ -1,12 +1,13 @@
 """Voice coordination engine: hands-free MIMIR interaction (Days 8-9).
 
-Speech-to-text (local Whisper) and text-to-speech (Edge-TTS, with an
-offline ``"sapi"`` fallback on Windows) sit behind the backend names
-``"whisper_local"`` / ``"edge_tts"`` / ``"sapi"``; either backend also
-accepts an injected callable so coordination logic (timeouts,
-``on_start`` hooks, intent parsing) stays fully testable without a
-microphone or speakers. :meth:`VoiceCoordinator.parse_intent` is pure
-keyword logic mapping utterances to coordination intents.
+Speech-to-text (local Whisper) and text-to-speech (Edge-TTS neural,
+offline ``"piper"`` neural, with an offline ``"sapi"`` OS fallback)
+sit behind the backend names ``"whisper_local"`` / ``"edge_tts"`` /
+``"piper"`` / ``"sapi"``; either backend also accepts an injected
+callable so coordination logic (timeouts, ``on_start`` hooks, intent
+parsing) stays fully testable without a microphone or speakers.
+:meth:`VoiceCoordinator.parse_intent` is pure keyword logic mapping
+utterances to coordination intents.
 """
 
 from __future__ import annotations
@@ -481,7 +482,9 @@ _KNOWN_STT = ("whisper_local",)
 # "sapi" is the offline OS speech fallback (Windows System.Speech, or
 # espeak/spd-say on POSIX). Edge stays the default neural voice; when
 # edge synthesis fails at runtime (offline), speak() falls back to it.
-_KNOWN_TTS = ("edge_tts", "sapi")
+# "piper" is the offline neural voice (rhasspy/piper): needs the
+# piper-tts package (or piper CLI) plus a voice model (.onnx).
+_KNOWN_TTS = ("edge_tts", "sapi", "piper")
 
 
 def _normalize(text: str) -> str:
@@ -591,6 +594,8 @@ class VoiceCoordinator:
                 raise VoiceError(f"tts backend failed: {exc}") from exc
         elif self.tts_backend == "sapi":
             self._sapi_speak(text)
+        elif self.tts_backend == "piper":
+            self._piper_speak(text)
         else:
             self._edge_speak(text)
 
@@ -611,6 +616,7 @@ class VoiceCoordinator:
         *,
         phrase_time_limit: Optional[float] = None,
         calibrate: bool = True,
+        backend: str = "auto",
     ) -> Optional[bytes]:
         """Capture one microphone phrase; returns wav bytes or None.
 
@@ -629,14 +635,26 @@ class VoiceCoordinator:
         installed), which ships its own PortAudio binaries and works
         where PyAudio wheels do not. Silence (no speech within
         ``timeout_sec``) returns None on either path without trying
-        the other.
+        the other. ``backend="sounddevice"`` skips the primary path
+        and records straight through sounddevice (the Phase-5
+        ``AudioCaptureWorker`` default when PyAudio is unavailable).
         """
+        if not isinstance(backend, str) or backend.strip().lower() not in (
+            "auto", "sounddevice",
+        ):
+            raise ValueError(
+                "backend: expected 'auto' or 'sounddevice', "
+                f"got {backend!r}"
+            )
         timeout_sec = self._positive_seconds(timeout_sec, field="timeout_sec")
         if phrase_time_limit is None:
             phrase_time_limit = timeout_sec + 4.0
         else:
             phrase_time_limit = self._positive_seconds(
                 phrase_time_limit, field="phrase_time_limit")
+        if backend.strip().lower() == "sounddevice":
+            return self._sounddevice_capture(
+                timeout_sec, phrase_time_limit, calibrate)
         try:
             return self._sr_capture(timeout_sec, phrase_time_limit, calibrate)
         except VoiceError as exc:
@@ -1057,6 +1075,183 @@ class VoiceCoordinator:
             "offline speech unavailable (no sapi/espeak/spd-say)"
         )
 
+    def _piper_speak(self, text: str) -> None:
+        """Speak via offline neural piper voice (no network needed).
+
+        Needs the ``piper-tts`` package (or the ``piper`` CLI) plus a
+        voice model (``.onnx``). The model resolves from
+        ``PIPER_MODEL``/``PIPER_VOICE`` env, or from ``voice`` when it
+        names an existing ``.onnx`` file. Raises :class:`VoiceError`
+        with install guidance when either piece is missing.
+        """
+        import os
+        import shutil
+        import tempfile
+
+        model = _piper_model_path(self.voice)
+        if model is None:
+            raise VoiceError(
+                "piper voice model not found (set PIPER_MODEL=/path/to/"
+                "voice.onnx or pass voice=/path/to/voice.onnx; download "
+                "a voice from https://github.com/rhasspy/piper/releases) "
+                "— offline piper synthesis needs it."
+            )
+        fd, wav_path = tempfile.mkstemp(suffix=".wav",
+                                        prefix="mimir_piper_")
+        os.close(fd)
+        synthesized = False
+        piper_error: Optional[str] = None
+        try:
+            if _piper_synthesize_python(model, text, wav_path):
+                synthesized = True
+            else:
+                exe = shutil.which("piper")
+                if exe is None:
+                    raise VoiceError(
+                        "piper is required for offline neural speech "
+                        "(pip install piper-tts; also needs a voice model "
+                        ".onnx) — no piper package or CLI found."
+                    )
+                try:
+                    proc = subprocess.Popen(
+                        [exe, "--model", model,
+                         "--output_file", wav_path],
+                        stdin=subprocess.PIPE,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                except FileNotFoundError:
+                    raise VoiceError(
+                        "piper speech unavailable: piper CLI not found"
+                    ) from None
+                _track_audio_proc(proc)
+                try:
+                    assert proc.stdin is not None
+                    proc.stdin.write(text.encode("utf-8"))
+                    proc.stdin.close()
+                    proc.wait(timeout=90)
+                except subprocess.TimeoutExpired:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                    raise VoiceError(
+                        "piper speech timed out") from None
+                finally:
+                    _untrack_audio_proc(proc)
+                if proc.returncode != 0:
+                    raise VoiceError(
+                        "piper speech failed "
+                        f"(exit {proc.returncode})"
+                    )
+                synthesized = True
+        except VoiceError:
+            try:
+                os.unlink(wav_path)
+            except OSError:
+                pass
+            raise
+        except Exception as exc:
+            piper_error = str(exc)
+            try:
+                os.unlink(wav_path)
+            except OSError:
+                pass
+            raise VoiceError(
+                f"piper synthesis failed: {exc}") from exc
+        if not synthesized or not os.path.isfile(wav_path):
+            try:
+                os.unlink(wav_path)
+            except OSError:
+                pass
+            raise VoiceError(
+                "piper synthesis failed"
+                + (f": {piper_error}" if piper_error else "")
+                + " (no audio produced)"
+            )
+        try:
+            play_thread = _play_audio_headless(wav_path)
+        except Exception as exc:
+            raise VoiceError(f"audio playback failed: {exc}") from exc
+        try:
+            play_thread.join()
+        except Exception:
+            pass
+
+
+def _piper_model_path(voice_hint: str = "") -> Optional[str]:
+    """Resolve a piper voice model (.onnx) path, or None (never raises)."""
+    import os
+
+    try:
+        for env_key in ("PIPER_MODEL", "PIPER_VOICE"):
+            candidate = (os.environ.get(env_key, "") or "").strip()
+            if candidate and os.path.isfile(candidate):
+                return os.path.abspath(candidate)
+        hint = (voice_hint or "").strip()
+        if hint.lower().endswith(".onnx") and os.path.isfile(hint):
+            return os.path.abspath(hint)
+    except Exception:
+        return None
+    return None
+
+
+def _piper_synthesize_python(model: str, text: str,
+                             wav_path: str) -> bool:
+    """Synthesize via the piper Python package; False when unavailable.
+
+    Returns True on success. Raises VoiceError only for a hard
+    synthesis failure; returns False when the package is not
+    importable so the caller can try the CLI next.
+    """
+    try:
+        import piper  # type: ignore[import-not-found]
+    except ImportError:
+        try:
+            import piper_tts as piper  # type: ignore[import-not-found]
+        except ImportError:
+            return False
+    try:
+        load = getattr(getattr(piper, "PiperVoice", None), "load", None)
+        if not callable(load):
+            return False
+        voice = load(model)
+        if hasattr(voice, "synthesize_wav"):
+            voice.synthesize_wav(text, wav_path)
+            return True
+        synthesize = getattr(voice, "synthesize", None)
+        if callable(synthesize):
+            import wave
+
+            chunks: list[bytes] = []
+
+            def _cb(data: Any) -> None:
+                try:
+                    chunks.append(bytes(data))
+                except Exception:
+                    pass
+
+            try:
+                synthesize(text, _cb)
+            except TypeError:
+                with wave.open(wav_path, "wb") as handle:
+                    synthesize(text, handle)
+                return True
+            if chunks:
+                import io
+                with wave.open(wav_path, "wb") as handle:
+                    handle.setnchannels(1)
+                    handle.setsampwidth(2)
+                    handle.setframerate(22050)
+                    handle.writeframes(b"".join(chunks))
+                return True
+            return False
+    except VoiceError:
+        raise
+    except Exception as exc:
+        raise VoiceError(f"piper synthesis failed: {exc}") from exc
+    return False
+
 
 def _play_audio_headless(path: str) -> "threading.Thread":
     """Play audio without opening external media player windows.
@@ -1076,8 +1271,11 @@ def _play_audio_headless(path: str) -> "threading.Thread":
                 winmm = ctypes.windll.winmm
                 alias = f"habi_tts_{int(time.time() * 1000)}"
                 safe_path = path.replace("/", "\\")
+                mci_type = ("waveaudio" if safe_path.lower().endswith(".wav")
+                            else "mpegvideo")
                 res = winmm.mciSendStringW(
-                    f'open "{safe_path}" type mpegvideo alias {alias}', None, 0, None
+                    f'open "{safe_path}" type {mci_type} alias {alias}',
+                    None, 0, None,
                 )
                 if res == 0:
                     winmm.mciSendStringW(f"play {alias} wait", None, 0, None)

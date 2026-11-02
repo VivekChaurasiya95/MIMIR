@@ -1,4 +1,4 @@
-"""Shared page scaffolding for the production shell (DESIGN.md section 6)."""
+"""Shared page scaffolding for the production shell (docs/DESKTOP_DESIGN.md section 6)."""
 
 from __future__ import annotations
 
