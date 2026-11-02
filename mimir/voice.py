@@ -15,7 +15,8 @@ import math
 import re
 import subprocess
 import sys
-from typing import Callable, Optional, Union
+import threading
+from typing import Any, Callable, Optional, Union
 
 from ._common import check_str
 
@@ -23,8 +24,35 @@ __all__ = [
     "INTENTS",
     "VoiceCoordinator",
     "VoiceError",
+    "audio_backend_status",
     "explain_capture_error",
 ]
+
+#: OS speech/audio subprocesses currently producing sound, across every
+#: coordinator instance. Module-global (not per-instance) so any
+#: :meth:`VoiceCoordinator.stop_speaking` call silences everything the
+#: process started — including speech another coordinator instance
+#: began. Guarded by :data:`_AUDIO_PROCS_LOCK`.
+_AUDIO_PROCS_LOCK = threading.Lock()
+_ACTIVE_AUDIO_PROCS: set[Any] = set()
+
+
+def _track_audio_proc(proc: Any) -> None:
+    """Register a sounding subprocess as stoppable (never raises)."""
+    try:
+        with _AUDIO_PROCS_LOCK:
+            _ACTIVE_AUDIO_PROCS.add(proc)
+    except Exception:
+        pass
+
+
+def _untrack_audio_proc(proc: Any) -> None:
+    """Forget a sounding subprocess (never raises)."""
+    try:
+        with _AUDIO_PROCS_LOCK:
+            _ACTIVE_AUDIO_PROCS.discard(proc)
+    except Exception:
+        pass
 
 #: Intents recognized by :meth:`VoiceCoordinator.parse_intent`.
 INTENTS = (
@@ -149,6 +177,266 @@ class VoiceError(Exception):
     """Base error for voice coordination failures."""
 
 
+#: Install guidance used when no microphone capture backend is importable.
+_NO_CAPTURE_BACKEND_HINT = (
+    "Microphone capture needs an audio backend: pip install "
+    "SpeechRecognition PyAudio (default path) or pip install sounddevice "
+    "(fallback; also needs numpy) — or pip install mimir[cobot] for both."
+)
+
+
+def _sounddevice_input_names() -> Optional[list[str]]:
+    """Input-device names via sounddevice, or None when unusable."""
+    try:
+        import sounddevice as sd
+    except ImportError:
+        return None
+    try:
+        devices = sd.query_devices()
+    except Exception:
+        return None
+    names: list[str] = []
+    try:
+        items = list(devices)
+    except TypeError:
+        return None
+    for device in items:
+        if not hasattr(device, "get"):
+            continue
+        try:
+            channels = device.get("max_input_channels", 0) or 0
+            name = str(device.get("name", "") or "").strip()
+        except Exception:
+            continue
+        if channels > 0 and name:
+            names.append(name)
+    return names
+
+
+def audio_backend_status() -> dict[str, Any]:
+    """Probe microphone capture backends without recording (never raises).
+
+    Returns ``{"available", "backend", "microphones", "hint"}`` where
+    ``backend`` is ``"speech_recognition"``, ``"sounddevice"``, or
+    ``"none"``. The SpeechRecognition + PyAudio path is primary (it is
+    what :meth:`VoiceCoordinator.capture_audio` tries first);
+    ``sounddevice`` is the fallback when PyAudio is missing or reports
+    no input device. ``hint`` is empty when available, otherwise plain
+    user guidance naming the installs that would fix it.
+    """
+    try:
+        return _audio_backend_status()
+    except Exception as exc:  # a probe must never break its caller
+        return {
+            "available": False,
+            "backend": "none",
+            "microphones": [],
+            "hint": f"Microphone probe failed ({exc}). "
+            + _NO_CAPTURE_BACKEND_HINT,
+        }
+
+
+def _audio_backend_status() -> dict[str, Any]:
+    try:
+        import speech_recognition as sr
+    except ImportError:
+        sr = None  # type: ignore[assignment]
+    if sr is not None:
+        try:
+            import pyaudio  # noqa: F401  (Microphone needs it at runtime)
+        except ImportError:
+            pass  # fall through to the sounddevice probe below
+        else:
+            try:
+                names = [
+                    str(name)
+                    for name in sr.Microphone.list_microphone_names()
+                    if str(name).strip()
+                ]
+            except Exception as exc:
+                if "pyaudio" not in str(exc).lower():
+                    return {
+                        "available": False,
+                        "backend": "none",
+                        "microphones": [],
+                        "hint": (
+                            f"Microphone unavailable ({exc}). Check a mic "
+                            "is plugged in, set as the system default, "
+                            "and not held by another app."
+                        ),
+                    }
+            else:
+                if names:
+                    return {
+                        "available": True,
+                        "backend": "speech_recognition",
+                        "microphones": names,
+                        "hint": "",
+                    }
+    fallback = _sounddevice_input_names()
+    if fallback:
+        return {
+            "available": True,
+            "backend": "sounddevice",
+            "microphones": fallback,
+            "hint": "",
+        }
+    if fallback is not None:
+        return {
+            "available": False,
+            "backend": "none",
+            "microphones": [],
+            "hint": ("No microphone input device found. Check a mic is "
+                     "plugged in, set as the system default, and not held "
+                     "by another app."),
+        }
+    return {
+        "available": False,
+        "backend": "none",
+        "microphones": [],
+        "hint": _NO_CAPTURE_BACKEND_HINT,
+    }
+
+
+def _ensure_ffmpeg() -> Optional[str]:
+    """Resolve an ``ffmpeg`` binary for Whisper (None when unavailable).
+
+    Prefers a system ``ffmpeg`` on PATH; otherwise wires the static
+    binary shipped by the ``imageio-ffmpeg`` wheel (whose executable is
+    *not* named ``ffmpeg``) into a temp bin dir prepended to PATH, so
+    Whisper's subprocess call resolves. Never raises.
+    """
+    import os
+    import shutil
+
+    try:
+        found = shutil.which("ffmpeg")
+    except Exception:
+        found = None
+    if found:
+        return found
+    try:
+        import imageio_ffmpeg
+
+        src = imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return None
+    try:
+        if not src or not os.path.isfile(src):
+            return None
+        import hashlib
+        import tempfile
+
+        digest = hashlib.sha256(
+            os.path.abspath(src).encode("utf-8")).hexdigest()[:12]
+        bindir = os.path.join(tempfile.gettempdir(),
+                              f"mimir-ffmpeg-{digest}")
+        os.makedirs(bindir, exist_ok=True)
+        name = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
+        dest = os.path.join(bindir, name)
+        if not os.path.isfile(dest):
+            shutil.copyfile(src, dest)
+            try:
+                os.chmod(dest, 0o755)
+            except OSError:
+                pass
+        if os.path.isfile(dest):
+            path = os.environ.get("PATH", "")
+            if bindir not in path.split(os.pathsep):
+                os.environ["PATH"] = bindir + os.pathsep + path
+            return shutil.which("ffmpeg") or dest
+    except Exception:
+        return None
+    return None
+
+
+def _transcription_status() -> tuple[bool, str]:
+    """Check the Whisper transcription half of voice input (never raises).
+
+    Returns ``(ok, hint)``; ``hint`` is empty when ready, otherwise
+    plain guidance naming the missing piece (openai-whisper or ffmpeg).
+    """
+    try:
+        import whisper  # noqa: F401 (on-device transcription)
+    except ImportError:
+        return (False, "openai-whisper is missing "
+                "(pip install openai-whisper) — on-device "
+                "transcription needs it.")
+    except Exception as exc:
+        return (False, f"openai-whisper is unusable ({exc}).")
+    try:
+        ready = _ensure_ffmpeg()
+    except Exception:
+        ready = None
+    if ready is None:
+        return (False, "ffmpeg is missing (pip install imageio-ffmpeg, "
+                "or install FFmpeg and add it to PATH) — on-device "
+                "transcription needs it.")
+    return (True, "")
+
+
+def _sounddevice_candidates(sd: Any) -> list[tuple[int, dict[str, Any]]]:
+    """Order input-device candidates for recording (best first).
+
+    Skips output-only and unnamed devices, prefers the system default
+    input, and demotes mapper pseudo-devices (e.g. Microsoft Sound
+    Mapper), which often refuse to open directly. Beyond the default,
+    candidates interleave across host APIs (MME / DirectSound / WASAPI
+    / WDM-KS / ...), so one broken API family cannot exhaust the
+    probe budget before a working family is tried. Returns
+    ``(device_index, {"name", "rate"})`` with the device's native
+    sample rate, which is far more likely to open than an assumed
+    rate. Never raises.
+    """
+    try:
+        devices = list(sd.query_devices())
+    except Exception:
+        return []
+    try:
+        default = sd.default.device[0]
+    except Exception:
+        default = None
+    first: list[tuple[int, dict[str, Any]]] = []
+    rest: list[tuple[int, int, dict[str, Any]]] = []
+    for index, device in enumerate(devices):
+        if not hasattr(device, "get"):
+            continue
+        try:
+            name = str(device.get("name", "") or "").strip()
+            max_in = device.get("max_input_channels", 0) or 0
+            rate = float(device.get("default_samplerate", 0) or 0)
+            api = device.get("hostapi", None)
+        except Exception:
+            continue
+        if max_in <= 0 or not name:
+            continue
+        try:
+            api_key = int(api)
+        except (TypeError, ValueError):
+            api_key = -1
+        low = name.lower()
+        mapper = "mapper" in low or "primary sound capture" in low
+        info = {"name": name, "rate": rate if rate > 0 else 44100.0}
+        if index == default and not mapper:
+            first.append((index, info))
+        else:
+            rest.append((2 if mapper else 1, api_key, (index, info)))
+    # Round-robin across host APIs within each rank: mapper last.
+    ordered: list[tuple[int, dict[str, Any]]] = list(first)
+    for rank in (1, 2):
+        groups: dict[int, list[tuple[int, dict[str, Any]]]] = {}
+        for item_rank, api_key, candidate in rest:
+            if item_rank != rank:
+                continue
+            groups.setdefault(api_key, []).append(candidate)
+        buckets = [groups[key] for key in sorted(groups)]
+        while any(buckets):
+            for bucket in buckets:
+                if bucket:
+                    ordered.append(bucket.pop(0))
+    return ordered
+
+
 def explain_capture_error(exc: BaseException) -> str:
     """Rewrite a capture failure as plain user guidance (pure).
 
@@ -164,24 +452,26 @@ def explain_capture_error(exc: BaseException) -> str:
         return ("Listening timed out — no speech detected. Speak a "
                 "little earlier and louder, then try again.")
     if isinstance(exc, (ImportError, ModuleNotFoundError)):
-        return ("SpeechRecognition or PyAudio is missing "
-                "(pip install SpeechRecognition PyAudio) — "
-                "microphone capture needs both.")
+        return _NO_CAPTURE_BACKEND_HINT
     if "speechrecognition" in low or "pyaudio" in low:
-        return ("SpeechRecognition or PyAudio is missing "
-                "(pip install SpeechRecognition PyAudio) — "
-                "microphone capture needs both.")
+        return _NO_CAPTURE_BACKEND_HINT
+    if "sounddevice" in low:
+        return _NO_CAPTURE_BACKEND_HINT
     if "whisper" in low:
         return ("openai-whisper is missing (pip install openai-whisper) "
                 "— on-device transcription needs it.")
+    if "ffmpeg" in low:
+        return ("ffmpeg is missing (pip install imageio-ffmpeg, or "
+                "install FFmpeg and add it to PATH) — on-device "
+                "transcription needs it.")
     if isinstance(exc, OSError) or "microphone" in low or "no device" in low:
         return (f"Microphone unavailable ({text or 'no input device'}). "
                 "Check a mic is plugged in, set as the system default, "
                 "and not held by another app.")
     detail = f": {text}" if text else ""
     return ("Microphone capture failed" + detail +
-            " (check SpeechRecognition + PyAudio are installed and a "
-            "default mic exists).")
+            " (check SpeechRecognition + PyAudio, or the sounddevice "
+            "fallback, are installed and a default mic exists).")
 
 
 STTBackend = Union[str, Callable[[float], Optional[str]]]
@@ -332,6 +622,14 @@ class VoiceCoordinator:
         itself. A short ambient-noise calibration runs first unless
         ``calibrate`` is False, so quiet rooms and loud rooms both
         trigger reliably.
+
+        The SpeechRecognition + PyAudio path runs first; when it is
+        unusable (missing modules, missing PyAudio, or no input
+        device) capture falls back to ``sounddevice`` (when
+        installed), which ships its own PortAudio binaries and works
+        where PyAudio wheels do not. Silence (no speech within
+        ``timeout_sec``) returns None on either path without trying
+        the other.
         """
         timeout_sec = self._positive_seconds(timeout_sec, field="timeout_sec")
         if phrase_time_limit is None:
@@ -339,6 +637,28 @@ class VoiceCoordinator:
         else:
             phrase_time_limit = self._positive_seconds(
                 phrase_time_limit, field="phrase_time_limit")
+        try:
+            return self._sr_capture(timeout_sec, phrase_time_limit, calibrate)
+        except VoiceError as exc:
+            try:
+                import sounddevice  # noqa: F401 (fallback availability)
+                import numpy  # noqa: F401 (fallback needs it)
+            except ImportError:
+                # Neither path is importable: one combined hint.
+                raise VoiceError(
+                    f"{exc} {_NO_CAPTURE_BACKEND_HINT}") from None
+            # Fallback errors name the real problem (busy/missing device),
+            # so they propagate instead of the primary-path failure.
+            return self._sounddevice_capture(
+                timeout_sec, phrase_time_limit, calibrate)
+
+    def _sr_capture(
+        self,
+        timeout_sec: float,
+        phrase_time_limit: float,
+        calibrate: bool,
+    ) -> Optional[bytes]:
+        """Capture via SpeechRecognition + PyAudio (primary path)."""
         try:
             import speech_recognition as sr
         except ImportError:
@@ -366,18 +686,149 @@ class VoiceCoordinator:
             raise VoiceError(f"microphone unavailable: {exc}") from None
         return audio.get_wav_data()
 
+    def _sounddevice_capture(
+        self,
+        timeout_sec: float,
+        phrase_time_limit: float,
+        calibrate: bool,
+    ) -> Optional[bytes]:
+        """Capture via sounddevice (fallback when PyAudio is unusable).
+
+        Records mono in 0.1s blocks at the input device's native
+        sample rate (Whisper resamples internally) with energy-based
+        onset detection: silence within ``timeout_sec`` returns None,
+        and recording stops after 0.8s of trailing silence or
+        ``phrase_time_limit``. Devices that refuse to open (mapper
+        pseudo-devices, busy or mismatched hardware) are skipped for
+        the next candidate. Returns stdlib-encoded wav bytes, the
+        same contract as :meth:`capture_audio`.
+        """
+        try:
+            import sounddevice as sd
+        except ImportError:
+            raise VoiceError(_NO_CAPTURE_BACKEND_HINT) from None
+        try:
+            import numpy as np
+        except ImportError:
+            raise VoiceError(
+                _NO_CAPTURE_BACKEND_HINT + " (numpy is also required)"
+            ) from None
+        import io
+        import wave
+
+        candidates = _sounddevice_candidates(sd)
+        if not candidates:
+            raise VoiceError(
+                "microphone unavailable: no sounddevice input device "
+                "found (check a mic is plugged in and set as the "
+                "system default)")
+        block_sec = 0.1
+
+        def _record(frames: int, device: int,
+                    rate: float) -> "np.ndarray":
+            try:
+                data = sd.rec(
+                    int(frames), samplerate=int(rate), channels=1,
+                    dtype="float32", device=device, blocking=True,
+                )
+            except Exception as exc:
+                raise VoiceError(
+                    f"microphone unavailable: {exc}") from None
+            try:
+                return np.asarray(data, dtype=np.float32).reshape(-1)
+            except Exception as exc:
+                raise VoiceError(
+                    f"microphone capture failed: {exc}") from None
+
+        def _rms(frames_data: "np.ndarray") -> float:
+            if frames_data.size == 0:
+                return 0.0
+            # float64: some drivers emit unnormalized scales that would
+            # overflow a float32 square.
+            scaled = frames_data.astype(np.float64, copy=False)
+            return float(np.sqrt(np.mean(scaled * scaled)))
+
+        # Probe candidates in order: a short record proves the device
+        # opens at its native rate before the real capture commits.
+        # Failed opens return immediately, so a generous budget is
+        # cheap; only the successful open costs one 0.1s block.
+        chosen: Optional[tuple[int, float]] = None
+        last_error: Optional[VoiceError] = None
+        for device, info in candidates[:10]:
+            rate = float(info["rate"])
+            try:
+                _record(int(rate * block_sec), device, rate)
+            except VoiceError as exc:
+                last_error = exc
+                continue
+            chosen = (device, rate)
+            break
+        if chosen is None:
+            raise (last_error if last_error is not None else VoiceError(
+                "microphone unavailable: no sounddevice input device "
+                "could be opened"))
+        device, sample_rate = chosen
+        block_frames = int(sample_rate * block_sec)
+
+        threshold = 0.02
+        if calibrate:
+            try:
+                noise = _record(int(sample_rate * 0.4), device, sample_rate)
+            except VoiceError:
+                raise
+            except Exception:
+                noise = None
+            if noise is not None:
+                threshold = max(_rms(noise) * 3.0, 0.015)
+
+        onset_blocks = max(1, int(timeout_sec / block_sec))
+        heard: list["np.ndarray"] = []
+        started = False
+        for _ in range(onset_blocks):
+            block = _record(block_frames, device, sample_rate)
+            if _rms(block) > threshold:
+                heard.append(block)
+                started = True
+                break
+        if not started:
+            return None
+
+        max_blocks = max(1, int(phrase_time_limit / block_sec))
+        quiet_needed = max(1, int(0.8 / block_sec))
+        quiet_run = 0
+        while len(heard) < max_blocks and quiet_run < quiet_needed:
+            block = _record(block_frames, device, sample_rate)
+            heard.append(block)
+            quiet_run = quiet_run + 1 if _rms(block) <= threshold else 0
+
+        pcm = np.concatenate(heard) if heard else np.zeros(0, np.float32)
+        pcm = np.clip(pcm, -1.0, 1.0)
+        pcm16 = (pcm * 32767).astype(np.int16)
+        buffer = io.BytesIO()
+        with wave.open(buffer, "wb") as handle:
+            handle.setnchannels(1)
+            handle.setsampwidth(2)
+            handle.setframerate(int(sample_rate))
+            handle.writeframes(pcm16.tobytes())
+        return buffer.getvalue()
+
     @staticmethod
     def list_microphones() -> list[str]:
         """Best-effort input-device names ([] when unavailable)."""
         try:
             import speech_recognition as sr
         except ImportError:
-            return []
-        try:
-            names = sr.Microphone.list_microphone_names()
-        except Exception:
-            return []
-        return [str(name) for name in names if str(name).strip()]
+            sr = None  # type: ignore[assignment]
+        if sr is not None:
+            try:
+                names = sr.Microphone.list_microphone_names()
+            except Exception:
+                names = []
+            listed = [str(name) for name in names if str(name).strip()]
+            if listed:
+                return listed
+        fallback = _sounddevice_input_names()
+        return list(fallback) if fallback else []
 
     def transcribe_wav_bytes(self, data: bytes) -> Optional[str]:
         """Transcribe wav audio with the cached Whisper tiny model."""
@@ -407,6 +858,12 @@ class VoiceCoordinator:
             raise VoiceError(
                 "openai-whisper is required for local transcription "
                 "(pip install openai-whisper)"
+            ) from None
+        if _ensure_ffmpeg() is None:
+            raise VoiceError(
+                "ffmpeg is required for local transcription "
+                "(pip install imageio-ffmpeg, or install FFmpeg and add "
+                "it to PATH)"
             ) from None
         if self._whisper_model is None:
             self._whisper_model = whisper.load_model("tiny")
@@ -461,30 +918,49 @@ class VoiceCoordinator:
             except VoiceError:
                 pass
             raise VoiceError(f"edge-tts synthesis failed: {exc}") from exc
-        # Fire-and-forget playback through headless OS audio subsystem (no media player windows).
+        # Headless playback through the OS audio subsystem (no media
+        # player windows). This call blocks until the utterance finishes
+        # so a speech worker (and its UI stop button) spans the audible
+        # speech, not just the synthesis; stop_speaking() releases the
+        # wait immediately via MCI stop-all / killing the player.
         try:
-            _play_audio_headless(path)
+            play_thread = _play_audio_headless(path)
         except Exception as exc:
             raise VoiceError(f"audio playback failed: {exc}") from exc
+        try:
+            play_thread.join()
+        except Exception:
+            pass
 
     def stop_speaking(self) -> None:
-        """Immediately interrupt and stop any active speech synthesis or audio."""
-        proc = getattr(self, "_active_proc", None)
-        if proc is not None:
-            try:
-                proc.terminate()
-                proc.kill()
-            except Exception:
-                pass
-            self._active_proc = None
-        proc2 = getattr(self, "_active_play_proc", None)
-        if proc2 is not None:
-            try:
-                proc2.terminate()
-                proc2.kill()
-            except Exception:
-                pass
-            self._active_play_proc = None
+        """Immediately silence any active speech synthesis or playback.
+
+        Kills every tracked OS speech/audio subprocess (SAPI voices,
+        fallback players) started by any coordinator instance, then
+        stops MCI playback (the Edge-TTS path on Windows). Idempotent
+        and never raises, so a UI stop button can call it freely.
+        """
+        with _AUDIO_PROCS_LOCK:
+            procs = list(_ACTIVE_AUDIO_PROCS)
+            _ACTIVE_AUDIO_PROCS.clear()
+        for proc in procs:
+            for action in ("terminate", "kill"):
+                try:
+                    getattr(proc, action)()
+                except Exception:
+                    pass
+        for attr in ("_active_proc", "_active_play_proc"):
+            proc = getattr(self, attr, None)
+            if proc is not None:
+                for action in ("terminate", "kill"):
+                    try:
+                        getattr(proc, action)()
+                    except Exception:
+                        pass
+                try:
+                    setattr(self, attr, None)
+                except Exception:
+                    pass
         if sys.platform == "win32":
             try:
                 import ctypes
@@ -520,21 +996,30 @@ class VoiceCoordinator:
                     + path.replace("'", "''") + "'))"
                 )
                 try:
-                    proc = subprocess.run(
+                    proc = subprocess.Popen(
                         ["powershell", "-NoProfile", "-NonInteractive",
                          "-Command", script],
-                        check=False,
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
-                        timeout=90,
                         creationflags=0x08000000,
                     )
                 except FileNotFoundError:
                     raise VoiceError(
                         "sapi speech unavailable: powershell not found"
                     ) from None
+                # Tracked (not run-and-waited) so stop_speaking() can
+                # silence a long utterance mid-sentence.
+                _track_audio_proc(proc)
+                try:
+                    proc.wait(timeout=90)
                 except subprocess.TimeoutExpired:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
                     raise VoiceError("sapi speech timed out") from None
+                finally:
+                    _untrack_audio_proc(proc)
             finally:
                 try:
                     os.unlink(path)
@@ -548,17 +1033,24 @@ class VoiceCoordinator:
             return
         for command in (["espeak", text], ["spd-say", text]):
             try:
-                proc = subprocess.run(
+                proc = subprocess.Popen(
                     command,
-                    check=False,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
-                    timeout=90,
                 )
             except FileNotFoundError:
                 continue
+            _track_audio_proc(proc)
+            try:
+                proc.wait(timeout=90)
             except subprocess.TimeoutExpired:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
                 raise VoiceError("offline speech timed out") from None
+            finally:
+                _untrack_audio_proc(proc)
             if proc.returncode == 0:
                 return
         raise VoiceError(
@@ -566,10 +1058,14 @@ class VoiceCoordinator:
         )
 
 
-def _play_audio_headless(path: str) -> None:
-    """Play audio in the background without opening external media player windows."""
+def _play_audio_headless(path: str) -> "threading.Thread":
+    """Play audio without opening external media player windows.
+
+    Playback runs on a daemon thread (returned to the caller) so the
+    synthesizer can block on it: callers join the thread to span the
+    full utterance, while stop_speaking() ends it early.
+    """
     import os
-    import threading
 
     def _worker() -> None:
         try:
@@ -588,7 +1084,7 @@ def _play_audio_headless(path: str) -> None:
                     winmm.mciSendStringW(f"close {alias}", None, 0, None)
                 else:
                     # Fallback to powershell background player if MCI fails
-                    subprocess.run(
+                    proc = subprocess.Popen(
                         [
                             "powershell",
                             "-NoProfile",
@@ -596,18 +1092,26 @@ def _play_audio_headless(path: str) -> None:
                             "-Command",
                             f"$p = New-Object System.Media.SoundPlayer; $p.SoundLocation='{safe_path}'; $p.PlaySync()",
                         ],
-                        check=False,
                         creationflags=0x08000000,
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
                     )
+                    _track_audio_proc(proc)
+                    try:
+                        proc.wait()
+                    finally:
+                        _untrack_audio_proc(proc)
             elif sys.platform == "darwin":
-                subprocess.run(
+                proc = subprocess.Popen(
                     ["afplay", path],
-                    check=False,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
+                _track_audio_proc(proc)
+                try:
+                    proc.wait()
+                finally:
+                    _untrack_audio_proc(proc)
             else:
                 for cmd in [
                     ["ffplay", "-nodisp", "-autoexit", path],
@@ -615,16 +1119,20 @@ def _play_audio_headless(path: str) -> None:
                     ["aplay", "-q", path],
                 ]:
                     try:
-                        res = subprocess.run(
+                        proc = subprocess.Popen(
                             cmd,
-                            check=False,
                             stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL,
                         )
-                        if res.returncode == 0:
-                            break
                     except FileNotFoundError:
                         continue
+                    _track_audio_proc(proc)
+                    try:
+                        proc.wait()
+                    finally:
+                        _untrack_audio_proc(proc)
+                    if proc.returncode == 0:
+                        break
         except Exception:
             pass
         finally:
@@ -635,4 +1143,5 @@ def _play_audio_headless(path: str) -> None:
 
     thread = threading.Thread(target=_worker, daemon=True)
     thread.start()
+    return thread
 

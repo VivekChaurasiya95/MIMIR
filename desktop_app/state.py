@@ -283,6 +283,11 @@ class AppState:
         finally:
             self.visor.set_state(VisorState.RESTING)
         self.episodes = list(found)
+        try:
+            self.prefs.lifetime_episodes = (
+                int(self.prefs.lifetime_episodes) + len(found))
+        except (AttributeError, TypeError, ValueError):
+            pass
         self._emit(EventType.GIT_CHANGED, "sensory.git_observer", {
             "repo": repo,
             "episode_ids": [e.id for e in found],
@@ -373,6 +378,11 @@ class AppState:
         seen = {episode.id for episode in self.episodes}
         fresh = [episode for episode in found if episode.id not in seen]
         self.episodes = fresh + self.episodes
+        try:
+            self.prefs.lifetime_episodes = (
+                int(self.prefs.lifetime_episodes) + len(fresh))
+        except (AttributeError, TypeError, ValueError):
+            pass
         if fresh:
             self._emit(EventType.GIT_CHANGED, "sensory.git_observer", {
                 "repo": repo,
@@ -421,6 +431,63 @@ class AppState:
             except Exception:
                 pass
             self._active_speak_worker = None
+
+    def mic_status(self) -> dict[str, Any]:
+        """Voice-input chain status for the Home mic button (never raises).
+
+        Returns ``{"available", "backend", "microphones", "message"}``.
+        Injected (callable) STT backends need no hardware and report
+        available via ``"injected"``; the live Whisper path needs both
+        a capture backend (see :func:`mimir.voice.audio_backend_status`)
+        and importable ``openai-whisper``. ``message`` is empty when
+        available, otherwise plain guidance naming the missing piece.
+        """
+        try:
+            return self._mic_status()
+        except Exception as exc:  # a probe must never break its caller
+            return {
+                "available": False,
+                "backend": "none",
+                "microphones": [],
+                "message": f"Microphone unavailable ({exc}).",
+            }
+
+    def _mic_status(self) -> dict[str, Any]:
+        coordinator = self.voice_coordinator()
+        if callable(getattr(coordinator, "stt_backend", None)):
+            return {
+                "available": True,
+                "backend": "injected",
+                "microphones": [],
+                "message": "",
+            }
+        from mimir.voice import (
+            _transcription_status,
+            audio_backend_status,
+        )
+
+        status = audio_backend_status()
+        if not status.get("available"):
+            return {
+                "available": False,
+                "backend": "none",
+                "microphones": [],
+                "message": str(status.get("hint") or "Microphone unavailable."),
+            }
+        ready, hint = _transcription_status()
+        if not ready:
+            return {
+                "available": False,
+                "backend": str(status.get("backend") or "none"),
+                "microphones": list(status.get("microphones") or []),
+                "message": hint,
+            }
+        return {
+            "available": True,
+            "backend": str(status.get("backend") or "none"),
+            "microphones": list(status.get("microphones") or []),
+            "message": "",
+        }
 
     def try_listen(self, timeout_sec: float = 5.0,
                    coordinator: VoiceCoordinator | None = None

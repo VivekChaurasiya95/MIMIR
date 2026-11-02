@@ -22,6 +22,14 @@ cobot = [
   "edge-tts>=6.1.0",
   "openai-whisper>=20250625",
   "SpeechRecognition>=3.10.0",
+  # Microphone capture: PyAudio is the default backend for
+  # SpeechRecognition; sounddevice (bundled PortAudio binaries, needs
+  # numpy) is the fallback when PyAudio wheels are unavailable.
+  "PyAudio>=0.2.11",
+  "sounddevice>=0.4.6",
+  # Static ffmpeg binary for on-device Whisper transcription (wired
+  # onto PATH at runtime when no system ffmpeg exists).
+  "imageio-ffmpeg>=0.4.9",
   # Window management (plan section 9). Windows-only; the desktop
   # backend degrades to a clear ActuatorError hint when it is absent.
   "pywin32>=306; sys_platform=='win32'",

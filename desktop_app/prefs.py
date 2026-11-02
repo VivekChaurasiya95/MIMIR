@@ -58,6 +58,10 @@ class DesktopPrefs:
     spacious: bool = True
     chimes: bool = True
     contrast_baseline: bool = True
+    # Read companion replies aloud; episodes stay in-memory per
+    # session while their lifetime count survives restarts (Home KPI).
+    speak_replies: bool = True
+    lifetime_episodes: int = 0
 
     def __post_init__(self) -> None:
         self.last_roots = tuple(self.last_roots)
