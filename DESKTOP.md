@@ -21,7 +21,7 @@
 
 | Screen | Spec | Core wiring | Key actions |
 |---|---|---|---|
-| Home | DESIGN.md 5.1 | `VisorController`, `memory_stats`, `respond`, `try_listen` | Serif greeting, status card + Start/Stop, explore bar + mic + Ask + chips, KPI cards, action directory |
+| Home | DESIGN.md 5.1 | `VisorController`, `memory_stats`, `respond`, `try_listen` | Serif greeting, status card + Start/Stop, explore bar + mic (preflight, auto-answer) + mute + Ask + chips, single-flight speech with Stop voice, KPI cards (lifetime sessions), action directory |
 | Observe | DESIGN.md 5.2 | `observe_git_repo`/`observe_new` → `infer_principles` → `save` | Watch banner, Sessions/Applications segmented, timeframe filter, session feed with badges, workspace card |
 | Memory | DESIGN.md 5.3 | `list_all`, `query_relevant`, `update_confidence`, `delete` | Search + category filter, principle cards with confidence badges, evidence drawer, calibrate/copy/delete |
 | Replicate | DESIGN.md 5.4 | `ReplicationActor.replicate` + `prefs.record_task` | Prompt panel + mic, project/principles/min-conf targeting, Generate, guided output, clickable recent-tasks feed |

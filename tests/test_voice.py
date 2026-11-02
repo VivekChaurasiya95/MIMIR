@@ -160,7 +160,9 @@ class CaptureTranscribeSplitTest(unittest.TestCase):
         real_import = builtins.__import__
 
         def blocked(name, *args, **kwargs):
-            if name in ("speech_recognition", "whisper"):
+            # The missing-dependency scenario covers both capture
+            # backends: SpeechRecognition and the sounddevice fallback.
+            if name in ("speech_recognition", "sounddevice", "whisper"):
                 raise ImportError(f"blocked for test: {name}")
             return real_import(name, *args, **kwargs)
 
@@ -219,7 +221,10 @@ class BackendValidationTest(unittest.TestCase):
         real_import = builtins.__import__
 
         def blocked(name, *args, **kwargs):
-            if name in ("speech_recognition", "whisper", "edge_tts"):
+            # Both capture backends are blocked: the missing-dependency
+            # scenario now means no backend at all can serve the mic.
+            if name in ("speech_recognition", "sounddevice", "whisper",
+                        "edge_tts"):
                 raise ImportError(f"blocked for test: {name}")
             return real_import(name, *args, **kwargs)
 
@@ -232,6 +237,65 @@ class BackendValidationTest(unittest.TestCase):
                 voice.speak("hello")
         finally:
             builtins.__import__ = real_import
+
+
+class StopSpeakingTest(unittest.TestCase):
+    def _voice(self):
+        return VoiceCoordinator(
+            stt_backend=lambda timeout: None,
+            tts_backend=lambda text: None,
+        )
+
+    def test_silence_is_a_noop(self):
+        self._voice().stop_speaking()  # must never raise
+
+    def test_kills_tracked_procs_and_clears(self):
+        import mimir.voice as voices
+
+        calls: list[str] = []
+
+        class FakeProc:
+            def terminate(self):
+                calls.append("terminate")
+
+            def kill(self):
+                calls.append("kill")
+
+        proc = FakeProc()
+        voices._track_audio_proc(proc)
+        self._voice().stop_speaking()
+        self.assertEqual(calls, ["terminate", "kill"])
+        with voices._AUDIO_PROCS_LOCK:
+            self.assertEqual(len(voices._ACTIVE_AUDIO_PROCS), 0)
+        # Second stop is a silent no-op (nothing left to kill).
+        self._voice().stop_speaking()
+        self.assertEqual(calls, ["terminate", "kill"])
+
+    def test_play_returns_joinable_thread(self):
+        import mimir.voice as voices
+
+        thread = voices._play_audio_headless("definitely_missing_xyz.mp3")
+        thread.join(timeout=15)
+        self.assertFalse(thread.is_alive(),
+                         "playback thread must terminate (missing file)")
+
+    def test_untracked_proc_survives_stop(self):
+        import mimir.voice as voices
+
+        calls: list[str] = []
+
+        class FakeProc:
+            def terminate(self):
+                calls.append("terminate")
+
+            def kill(self):
+                calls.append("kill")
+
+        proc = FakeProc()
+        voices._track_audio_proc(proc)
+        voices._untrack_audio_proc(proc)
+        self._voice().stop_speaking()
+        self.assertEqual(calls, [])
 
 
 if __name__ == "__main__":

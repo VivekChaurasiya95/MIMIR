@@ -545,6 +545,12 @@ QPushButton#mic_btn {{
   min-width: 36px; max-width: 36px; min-height: 36px; max-height: 36px;
 }}
 QPushButton#mic_btn:hover {{ background: {p["accent_pill_lavender"]}; }}
+QPushButton#speaker_btn {{
+  background: {p["bg_nav_active"]}; color: {p["nav_active_text"]};
+  border: 0; border-radius: 18px; font-size: 14px;
+  min-width: 36px; max-width: 36px; min-height: 36px; max-height: 36px;
+}}
+QPushButton#speaker_btn:hover {{ background: {p["accent_pill_lavender"]}; }}
 QPushButton#start_obs_btn {{
   background: {p["bg_nav_active"]}; color: {p["nav_active_text"]};
   border: 0; border-radius: 999px; padding: 9px 20px; font-weight: 600; font-size: 13px;

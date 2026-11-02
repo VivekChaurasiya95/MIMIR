@@ -214,8 +214,41 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
     mic_btn.setObjectName("mic_btn")
     mic_btn.setFixedSize(32, 32)
     mic_btn.setToolTip("Speak instead of typing (needs a microphone)")
+    speaker_btn = QtWidgets.QPushButton(
+        "🔊" if state.prefs.speak_replies else "🔇")
+    speaker_btn.setObjectName("speaker_btn")
+    speaker_btn.setFixedSize(32, 32)
+
+    def _sync_speaker() -> None:
+        on = bool(getattr(state.prefs, "speak_replies", True))
+        speaker_btn.setText("🔊" if on else "🔇")
+        speaker_btn.setToolTip(
+            "Voice replies on — click to mute Habi" if on
+            else "Voice replies muted — click to unmute Habi")
+
+    def on_toggle_voice() -> None:
+        state.prefs.speak_replies = not bool(
+            getattr(state.prefs, "speak_replies", True))
+        try:
+            state.prefs.save()
+        except OSError:
+            pass
+        if not state.prefs.speak_replies:
+            try:
+                state.stop_speaking()
+            except Exception:
+                pass
+        _sync_speaker()
+        status.showMessage(
+            "Voice replies on — Habi will read answers aloud."
+            if state.prefs.speak_replies else
+            "Voice replies muted — answers appear as text.", 4000)
+
+    _sync_speaker()
+    speaker_btn.clicked.connect(on_toggle_voice)
     pill_lay.addWidget(sparkle)
     pill_lay.addWidget(explore, 1)
+    pill_lay.addWidget(speaker_btn)
     pill_lay.addWidget(mic_btn)
     layout.addWidget(explore_pill)
 
@@ -469,7 +502,11 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
         stats = state.memory_stats() if principles else {
             "count": 0, "avg_confidence": 0.0}
         kpi_cards[0].setText(str(stats["count"]))
-        kpi_cards[1].setText(str(len(state.episodes)))
+        try:
+            lifetime = int(state.prefs.lifetime_episodes)
+        except (AttributeError, TypeError, ValueError):
+            lifetime = 0
+        kpi_cards[1].setText(str(max(lifetime, len(state.episodes))))
         kpi_cards[2].setText(f"{stats['avg_confidence']:.2f}")
         try:
             watch_btn.updateGeometry()
@@ -491,6 +528,10 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
         if watcher.watching:
             watcher.stop()
             home_error.setVisible(False)
+            try:
+                state.prefs.save()
+            except OSError:
+                pass
             refresh_content()
             status.showMessage("Observation paused. Habi is resting.", 4000)
             return
@@ -532,6 +573,10 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
                 _failed_start(message)
             else:
                 home_error.setVisible(False)
+                try:
+                    state.prefs.save()
+                except OSError:
+                    pass
                 status.showMessage(
                     "Habitous active observation started for "
                     f"{Path(repo).name}.", 4000)
@@ -554,6 +599,8 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
     def _speak_answer(answer: str) -> None:
         """Speak a companion reply aloud without blocking the UI."""
         state.stop_speaking()
+        if not bool(getattr(state.prefs, "speak_replies", True)):
+            return
         spoken = answer.split("[Extended Technical Breakdown]")[0].strip()
         spoken = spoken.replace("•", "").replace("✦", "").strip()
         if not spoken:
@@ -1023,6 +1070,30 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
                 pass
             return
 
+        # Preflight: verify the full voice-input chain (capture backend
+        # + on-device Whisper) before entering the listening state, so a
+        # missing mic or backend reports actionable guidance instantly
+        # instead of failing after a 10s worker run.
+        try:
+            mic_state = state.mic_status()
+        except Exception:
+            mic_state = {"available": False, "backend": "none",
+                         "message": "Microphone unavailable."}
+        if not mic_state.get("available"):
+            try:
+                status.showMessage(
+                    f"Microphone: {mic_state.get('message') or 'unavailable'}",
+                    8000)
+            except Exception:
+                pass
+            return
+        backend_name = str(mic_state.get("backend") or "none")
+        backend_label = {
+            "speech_recognition": "microphone",
+            "sounddevice": "microphone (sounddevice)",
+            "injected": "voice input",
+        }.get(backend_name, "microphone")
+
         try:
             mic_btn._prev_placeholder = explore.placeholderText()  # type: ignore[attr-defined]
         except Exception:
@@ -1031,8 +1102,10 @@ def build_home_tab(state: AppState, navigate: Callable[[str], None],
         mic_btn.setText("⏹")
         mic_btn.setStyleSheet("background-color: #EF4444; color: #FFFFFF; border-radius: 16px; font-weight: bold;")
         mic_btn.setToolTip("Listening... Click to stop")
-        explore.setPlaceholderText("🎙️ Listening to your voice... Speak now.")
-        status.showMessage("Listening… speak now (10s).", 6000)
+        explore.setPlaceholderText(
+            f"🎙️ Listening via {backend_label}... Speak now.")
+        status.showMessage(
+            f"Listening via {backend_label}… speak now (10s).", 6000)
         try:
             visor_face.set_state("listening")
         except Exception:

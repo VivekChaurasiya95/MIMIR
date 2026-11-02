@@ -93,6 +93,10 @@ class MainWindow:
             return
         self._closing = True
         try:
+            self.state.prefs.save()
+        except Exception:
+            pass
+        try:
             from .tray import hide_tray
             if self._window is not None:
                 hide_tray(self._window)

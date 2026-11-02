@@ -857,12 +857,15 @@ class UiWiringRegressionTest(unittest.TestCase):
         from desktop_app.app import MainWindow
         main = MainWindow(AppState(store_path=":memory:"))
         try:
-            window = main.build()
-            self.assertIsNotNone(window)
-            main.close()
-            main.close()
-            main.shutdown()
-            self.assertTrue(main._closing)
+            # shutdown() persists prefs; keep the real file untouched.
+            with mock.patch.object(DesktopPrefs, "save",
+                                   lambda self, p=None: None):
+                window = main.build()
+                self.assertIsNotNone(window)
+                main.close()
+                main.close()
+                main.shutdown()
+                self.assertTrue(main._closing)
         finally:
             main.close()
             main.state.close()

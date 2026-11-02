@@ -974,6 +974,133 @@ class MemoryFeedbackTest(_QtCase):
                          "deleted detail falls back to the list")
 
 
+class HomeVoiceTest(_QtCase):
+    def _build(self, state):
+        from desktop_app.tabs.home import build_home_tab
+        from mimir.voice import VoiceCoordinator
+        orig = type(state).voice_coordinator
+        type(state).voice_coordinator = (
+            lambda self: VoiceCoordinator(stt_backend=lambda t: None,
+                                          tts_backend=lambda text: None))
+        self.addCleanup(setattr, type(state), "voice_coordinator", orig)
+        self._nav = []
+        status = self._status()
+        root = build_home_tab(state, self._nav.append, status,
+                              self._watcher())
+        self._roots.append(root)
+        self._status_stub = status
+        return root
+
+    def _ask(self, root, text="hello there"):
+        explore = next(e for e in root.findChildren(self.QtWidgets.QLineEdit)
+                       if "explore" in (e.placeholderText() or "").lower())
+        explore.setText(text)
+        ask = next(b for b in root.findChildren(self.QtWidgets.QPushButton)
+                   if b.text().strip().lower().startswith("ask"))
+        ask.click()
+        self._pump(400)
+
+    def _fake_speak_factory(self):
+        QtCore = self.QtCore
+        Signal = getattr(QtCore, "pyqtSignal", None) or QtCore.Signal
+
+        class FakeWorker(QtCore.QObject):
+            speak_started = Signal()
+            speak_finished = Signal()
+            speak_error = Signal(str)
+            speak_cancelled = Signal()
+
+            def __init__(self):
+                super().__init__()
+                self.cancelled = False
+                self.started = False
+
+            def start(self):
+                self.started = True
+
+            def cancel(self):
+                self.cancelled = True
+
+        created: list = []
+
+        def factory(voice, text, parent=None):
+            worker = FakeWorker()
+            created.append(worker)
+            return worker
+
+        import desktop_app.voice_worker as voice_worker
+
+        orig = voice_worker.create_speak_worker
+        voice_worker.create_speak_worker = factory
+        self.addCleanup(setattr, voice_worker, "create_speak_worker", orig)
+        return created
+
+    def _speaker(self, root):
+        return next(b for b in root.findChildren(self.QtWidgets.QPushButton)
+                    if b.objectName() == "speaker_btn")
+
+    def test_mute_toggle_flips_pref_and_blocks_speech(self):
+        import json
+        from pathlib import Path
+
+        state = self._state()
+        created = self._fake_speak_factory()
+        root = self._build(state)
+        speaker = self._speaker(root)
+        self.assertEqual(speaker.text(), "🔊")
+        speaker.click()
+        self._pump()
+        self.assertFalse(state.prefs.speak_replies)
+        self.assertEqual(speaker.text(), "🔇")
+        saved = json.loads(
+            next(Path(self._tmp.name).glob("*.json")).read_text(
+                encoding="utf-8"))
+        self.assertFalse(saved["speak_replies"])
+        self._ask(root)
+        replies = [lbl.text() for lbl in
+                   root.findChildren(self.QtWidgets.QLabel)
+                   if lbl.text().startswith(f"{state.prefs.assistant_name}:")]
+        self.assertTrue(replies, "muted ask still answers in text")
+        self.assertEqual(created, [], "muted ask creates no speech worker")
+        speaker.click()
+        self._pump()
+        self.assertTrue(state.prefs.speak_replies)
+        self._ask(root)
+        self.assertEqual(len(created), 1, "unmuted ask speaks again")
+
+    def test_second_ask_cancels_first_voice(self):
+        state = self._state()
+        created = self._fake_speak_factory()
+        root = self._build(state)
+        self._ask(root, "first question here")
+        self._ask(root, "second question here")
+        self.assertEqual(len(created), 2)
+        self.assertTrue(created[0].cancelled,
+                        "a new answer silences the previous voice")
+        self.assertFalse(created[1].cancelled)
+
+    def test_stop_voice_button_silences_and_hides(self):
+        state = self._state()
+        created = self._fake_speak_factory()
+        root = self._build(state)
+        self._ask(root)
+        stop = next(b for b in root.findChildren(self.QtWidgets.QPushButton)
+                    if b.text() == "⏹ Stop voice")
+        self.assertTrue(stop.isVisibleTo(root))
+        stop.click()
+        self._pump()
+        self.assertTrue(created[0].cancelled)
+        self.assertFalse(stop.isVisibleTo(root))
+
+    def test_sessions_kpi_uses_lifetime_count(self):
+        state = self._state(lifetime_episodes=7)
+        root = self._build(state)
+        numbers = [lbl.text() for lbl in
+                   root.findChildren(self.QtWidgets.QLabel)
+                   if lbl.objectName() == "kpi_number"]
+        self.assertEqual(numbers[1], "7")
+
+
 class TrayBuilderTest(_QtCase):
     def test_offscreen_returns_none(self):
         from desktop_app.tray import sync_tray
