@@ -385,7 +385,7 @@ def create_visor_widget(
                 pass
 
         def set_activity_note(self, note: str) -> None:
-            """Show a one-line activity read in the tooltip (\"Notices\").
+            """Show a one-line activity read in the tooltip ("Notices").
 
             Called while Habi wanders so roaming narrates the task it
             sees; an empty note clears the suffix.

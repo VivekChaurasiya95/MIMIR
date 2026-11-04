@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Hebitus</title>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="#2a14b4"/>
+  <g fill="none" stroke="#ffffff" stroke-width="8" stroke-linecap="round">
+    <line x1="23" y1="20" x2="23" y2="44"/>
+    <line x1="41" y1="20" x2="41" y2="44"/>
+    <line x1="23" y1="32" x2="41" y2="32"/>
+  </g>
+  <circle cx="48.5" cy="14" r="4" fill="#99efe5"/>
+</svg>

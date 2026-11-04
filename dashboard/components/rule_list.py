@@ -86,15 +86,16 @@ def render_rule_card(
     t_col1, t_col2 = st.columns([1, 6])
     with t_col1:
         checked = st.toggle(
-            "Safeguard State",
+            "Enabled",
             value=enabled,
             key=f"rule-toggle-{key}",
+            help=f"Enable or disable the '{name}' safeguard.",
         )
         if checked != enabled:
             on_toggle(principle.id, checked)
 
     if anti_pattern:
-        with st.expander(f"Defended Invariant vs Anti-Pattern ({name})"):
+        with st.expander(f"Invariant vs anti-pattern: {name}"):
             st.markdown(
                 f"""
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">

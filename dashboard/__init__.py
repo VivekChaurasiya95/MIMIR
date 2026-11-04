@@ -1,3 +1,3 @@
-"""MIMIR Control Tower dashboard package (MIMIR 3.0 Pillar 2)."""
+"""Hebitus Control Tower dashboard package (Hebitus 3.0 Pillar 2)."""
 
 from __future__ import annotations

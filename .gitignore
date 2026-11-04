@@ -13,15 +13,15 @@ __pycache__/
 *.db
 *.sqlite
 *.sqlite3
-mimir_memory.db
-mimir_replicate_*.db
+hebitus_memory.db
+hebitus_replicate_*.db
 demo_memory.db
 
 # Audio & Temporary Media
 *.mp3
 *.wav
 *.ogg
-mimir_voice_*.mp3
+hebitus_voice_*.mp3
 
 # Virtual Environments
 venv/
@@ -34,8 +34,8 @@ build/
 dist/
 *.egg-info/
 tmp*/
-mimir-ffmpeg-*/
-mimir_drive_*/
+hebitus-ffmpeg-*/
+hebitus_drive_*/
 .pytest_cache/
 .coverage
 htmlcov/

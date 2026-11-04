@@ -193,7 +193,7 @@ def _principle_text(principle: BehavioralPrinciple) -> str:
 class PrincipleStore:
     """Durable, queryable subconscious for behavioral principles.
 
-    Backed by one SQLite file (or ``\":memory:\"``). Embeddings cover the
+    Backed by one SQLite file (or ``":memory:"``). Embeddings cover the
     principle's trigger scope plus latent invariant. Single-connection and
     not thread-safe (MVP scope); use as a context manager or call
     :meth:`close` to release file locks.

@@ -1,7 +1,6 @@
-"""MIMIR 3.0 Visual Control Tower (Institutional Assurance Theme).
+"""Hebitus 3.0 Visual Control Tower (Institutional Assurance Theme).
 
-High-fidelity cobot dashboard matching the approved designs in
-`desktop_app/assets/ui/*`:
+High-fidelity cobot dashboard:
 - Intention Matrix / Studio: Task controller, intent grounding, dual lenses, safe execution dock
 - Knowledge Vault: Live workspace index, file cards, token counts, privacy boundaries
 - Habits & Safeguards: Steerable rule bank, telemetry bento, commit micro-delta mining
@@ -17,13 +16,41 @@ import os
 import re
 import sys
 from pathlib import Path
+from urllib.parse import quote
 
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# Always run dashboard UI code fresh: Streamlit re-executes this script on
+# every rerun but keeps imported submodules cached, so without this, edits
+# to diff_viewer/rule_list/ui/theme only take effect after a server restart
+# (stale modules even crash startup when new names are imported from them).
+import importlib  # noqa: E402
+
+import dashboard.components.diff_viewer as _diff_viewer_mod  # noqa: E402
+import dashboard.components.rule_list as _rule_list_mod  # noqa: E402
+import dashboard.components.ui as _ui_mod  # noqa: E402
+import dashboard.theme as _theme_mod  # noqa: E402
+
+importlib.reload(_diff_viewer_mod)
+importlib.reload(_rule_list_mod)
+importlib.reload(_ui_mod)
+importlib.reload(_theme_mod)
+
 from dashboard.components.diff_viewer import render_diff, render_english_comparison  # noqa: E402
 from dashboard.components.rule_list import render_rule_card  # noqa: E402
+from dashboard.components.ui import (  # noqa: E402
+    NAV_ITEMS,
+    NAV_KEYS,
+    empty_state,
+    metric_tile,
+    nav_label,
+    page_header,
+    panel_title,
+    status_pill,
+    stepper,
+)
 from dashboard.theme import inject_theme  # noqa: E402
 from mimir import miner, reasoning, sanitizer  # noqa: E402
 from mimir.actuator import TransactionalActuator, TxBoundaryError  # noqa: E402
@@ -32,9 +59,36 @@ from mimir.llama_intent import is_ollama_available  # noqa: E402
 from mimir.memory import PrincipleBank, resolve_embedding_provider  # noqa: E402
 from mimir.store import HashEmbeddingProvider  # noqa: E402
 
+_HEBITUS_SVG = Path(__file__).resolve().parent / "assets" / "hebitus.svg"
+_HEBITUS_PNG = Path(__file__).resolve().parent / "assets" / "hebitus-256.png"
+if _HEBITUS_PNG.exists():
+    _HEBITUS_FAVICON = str(_HEBITUS_PNG)
+elif _HEBITUS_SVG.exists():
+    _HEBITUS_FAVICON = str(_HEBITUS_SVG)
+else:
+    _HEBITUS_FAVICON = "⚡"
+
+
+def _hebitus_logo_img(size: int = 32) -> str:
+    """Hebitus logo as a single-line <img> data URI.
+
+    Lives here (not imported from ui) so app.py only ever imports
+    long-stable names: no cached module can break startup. Raw inline
+    <svg> would also break st.markdown rendering, hence <img>.
+    """
+    try:
+        svg = _HEBITUS_SVG.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    return (
+        f'<img src="data:image/svg+xml,{quote(svg)}" '
+        f'width="{size}" height="{size}" alt="Hebitus" />'
+    )
+
+
 st.set_page_config(
-    page_title="MIMIR Control Tower",
-    page_icon="⚡",
+    page_title="Hebitus Control Tower",
+    page_icon=_HEBITUS_FAVICON,
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -139,67 +193,72 @@ def discover_python_files(repo: str, limit: int = 200) -> list[str]:
 
 
 # ======================================================================
-# LEFT PANEL (SIDEBAR): Exact Match to Design Mockups
+# LEFT PANEL (SIDEBAR): Brand / Menu / Guardrails / Workspace / Status
 # ======================================================================
 with st.sidebar:
     st.markdown(
-        """
-        <div style="display:flex; align-items:center; gap:6px; margin-bottom:14px; padding-right:38px;">
-            <span class="material-symbols-outlined" style="color:#2a14b4; font-size:20px;">grid_view</span>
-            <span style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:#464554;">The Intention Matrix</span>
+        f"""
+        <div class="mimir-side-brand">
+            {_hebitus_logo_img(32)}
+            <div class="mimir-side-brandname">HEBITUS</div>
         </div>
-        <div class="mimir-sidebar-card">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                <span style="font-size:10px; font-weight:600; text-transform:uppercase; color:#464554;">Active Session</span>
-                <span style="width:7px; height:7px; border-radius:50%; background:#006a63; display:inline-block;"></span>
-            </div>
-            <div style="font-size:14px; font-weight:600; color:#131b2e;">Enterprise Risk Scope</div>
-            <div style="font-size:11px; color:#777586; margin-top:2px;">Model: MIMIR Governance v4.2</div>
-        </div>
-        <div style="font-size:11px; font-weight:700; text-transform:uppercase; color:#777586; margin:10px 0 6px 4px; letter-spacing:0.04em;">Navigation</div>
         """,
         unsafe_allow_html=True,
     )
 
-    nav_selection = st.radio(
-        "Navigation",
-        (
-            "Intention Matrix",
-            "Knowledge Vault",
-            "Assisting Habits",
-            "Audit Trace Ledger",
-        ),
-        label_visibility="collapsed",
-    )
+    # Tabs are real buttons (never a radio), so no option circles can
+    # ever render — the rail is icon + label rows like a product sidebar.
+    if st.session_state.get("mimir_nav") not in NAV_KEYS:
+        st.session_state["mimir_nav"] = NAV_KEYS[0]
+    for _tab_key, _, _ in NAV_ITEMS:
+        if st.button(
+            nav_label(_tab_key),
+            key=f"mimir-tab-{_tab_key}",
+            type="primary" if st.session_state["mimir_nav"] == _tab_key else "secondary",
+            use_container_width=True,
+        ):
+            st.session_state["mimir_nav"] = _tab_key
+            st.rerun()
+    nav_key = st.session_state["mimir_nav"]
 
     st.markdown(
-        """
-        <div style="font-size:11px; font-weight:700; text-transform:uppercase; color:#777586; margin:16px 0 8px 4px; letter-spacing:0.04em;">Assisting Habits</div>
+        '<div class="mimir-side-div"></div>'
+        '<div class="mimir-side-title">Guardrails</div>',
+        unsafe_allow_html=True,
+    )
+    st.toggle("Safe mode", key="guard_safe")
+    st.caption("Error-handling and safety rules steer generation.")
+    st.toggle("Auto-refine", key="guard_refine")
+    st.caption("Style and typing rules steer generation.")
+    st.toggle("PII redaction", key="guard_pii")
+    st.caption("Mask secret-like strings in every preview.")
+
+    st.markdown(
+        '<div class="mimir-side-div"></div>'
+        '<div class="mimir-side-title">Workspace</div>',
+        unsafe_allow_html=True,
+    )
+    # Connection values are read from widget state first so the status row
+    # can render above the (collapsed) settings that own the inputs.
+    _endpoint_val = st.session_state.get("cfg_endpoint", DEFAULT_ENDPOINT)
+    ollama_up = _cached_ollama_status(_endpoint_val)
+    if ollama_up:
+        _side_status = status_pill(text="Connected", tone="ok")
+    else:
+        _side_status = status_pill(text="Offline", tone="warn")
+    st.markdown(
+        f"""
+        <div class="mimir-side-statusrow">
+            {_side_status}
+            <span class="mimir-side-ver">v2.8.4</span>
+        </div>
         """,
         unsafe_allow_html=True,
     )
-    st.checkbox(
-        "Safe Guardrails",
-        key="guard_safe",
-        help="Steer generation with Error Handling / Safety rules.",
-    )
-    st.checkbox(
-        "Auto-Refine",
-        key="guard_refine",
-        help="Steer generation with Style / Typing rules.",
-    )
-    st.checkbox(
-        "PII Redaction",
-        key="guard_pii",
-        help="Mask secret-like strings in every preview.",
-    )
-
-    with st.expander("Workspace & Engine Config"):
-        repo = st.text_input("Project workspace", value=DEFAULT_REPO)
-        endpoint = st.text_input("Ollama endpoint", value=DEFAULT_ENDPOINT)
-
-    ollama_up = _cached_ollama_status(endpoint)
-    with st.expander("Doctor: Health Gate"):
+    with st.expander("Connection settings"):
+        repo = st.text_input("Project path", value=DEFAULT_REPO, key="cfg_repo")
+        endpoint = st.text_input("Ollama endpoint", value=DEFAULT_ENDPOINT, key="cfg_endpoint")
+    with st.expander("Health details"):
         report = _cached_doctor(
             os.path.join(repo, "mimir_memory.db"),
             endpoint,
@@ -210,37 +269,25 @@ with st.sidebar:
         if not report.ok:
             st.warning("One or more health checks need attention.")
 
-    st.markdown(
-        """
-        <div style="border-top:1px solid #dae2fd; padding-top:12px; margin-top:18px; display:flex; justify-content:space-between; align-items:center; color:#777586; font-size:11px;">
-            <span style="display:inline-flex; align-items:center; gap:4px;">
-                <span class="material-symbols-outlined" style="font-size:14px;">shield</span> Compliance Tier 1
-            </span>
-            <span style="font-weight:600;">v2.8.4</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
 bank = open_bank(repo, endpoint)
 
 # ======================================================================
 # TOP GLOBAL HEADER BAR
 # ======================================================================
-repo_name = os.path.basename(os.path.abspath(repo)) or "MIMIR Project"
-status_text = "Copilot Connected Successfully" if ollama_up else "Offline Mode (Local Templates)"
-pulse_dot = '<span class="mimir-pulse-dot"></span>' if ollama_up else '<span style="width:8px; height:8px; border-radius:50%; background:#d97706; display:inline-block;"></span>'
+repo_name = os.path.basename(os.path.abspath(repo)) or "Hebitus Project"
+if ollama_up:
+    status_text = "Copilot Connected Successfully"
+    status_tone = "ok"
+else:
+    status_text = "Offline Mode (Local Templates)"
+    status_tone = "warn"
 
 st.markdown(
     f"""
     <div class="mimir-top-nav">
         <div class="mimir-brand-cluster">
-            <div class="mimir-brand-cluster">
-                <div class="mimir-logo-icon">
-                    <span class="material-symbols-outlined" style="font-size:20px;">neurology</span>
-                </div>
-                <span class="mimir-brand-title">MIMIR</span>
-            </div>
+            {_hebitus_logo_img(32)}
+            <span class="mimir-brand-title">HEBITUS</span>
             <div style="height:16px; width:1px; background:#c7c4d7;"></div>
             <div class="mimir-workspace-badge">
                 <span class="material-symbols-outlined" style="font-size:16px; color:#464554;">folder_supervised</span>
@@ -248,10 +295,7 @@ st.markdown(
             </div>
         </div>
         <div style="display:flex; align-items:center; gap:12px;">
-            <div class="mimir-status-pill">
-                {pulse_dot}
-                <span>{status_text}</span>
-            </div>
+            {status_pill(text=status_text, tone=status_tone)}
             <div style="width:32px; height:32px; border-radius:50%; background:#2a14b4; display:flex; align-items:center; justify-content:center; color:#ffffff;">
                 <span class="material-symbols-outlined" style="font-size:18px;">person</span>
             </div>
@@ -264,31 +308,21 @@ st.markdown(
 # ======================================================================
 # SCREEN 1: INTENTION MATRIX / INTENTION STUDIO
 # ======================================================================
-if nav_selection == "Intention Matrix":
-    st.markdown(
-        """
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-            <div style="display:flex; align-items:center; gap:10px;">
-                <div style="width:28px; height:28px; border-radius:8px; background:#2a14b4; display:flex; align-items:center; justify-content:center; color:#ffffff;">
-                    <span class="material-symbols-outlined" style="font-size:18px;">neurology</span>
-                </div>
-                <div>
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <h2 style="font-size:20px; font-weight:700; color:#131b2e; margin:0;">MIMIR Intention Studio</h2>
-                        <span style="font-size:11px; font-weight:600; padding:2px 8px; border-radius:9999px; background:#e2e7ff; color:#2a14b4;">st.session: live</span>
-                    </div>
-                    <div style="font-size:12px; color:#464554;">Deterministic Safety Orchestration & Copilot Action Synthesis</div>
-                </div>
-            </div>
-            <div style="display:flex; align-items:center; gap:8px;">
-                <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(153, 239, 229, 0.4); padding:4px 10px; border-radius:9999px; font-size:12px; color:#006f67; font-weight:500;">
-                    <span style="width:6px; height:6px; border-radius:50%; background:#006a63;"></span>
-                    <span>Auto-Sync Enabled</span>
-                </div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+if nav_key == "intention":
+    page_header(
+        icon="neurology",
+        title="Hebitus Intention Studio",
+        subtitle="Deterministic safety orchestration and copilot action synthesis",
+        status_html=(
+            status_pill(text="Session: live", tone="info")
+            + status_pill(text="Auto-sync enabled", tone="ok")
+        ),
+    )
+
+    _proposal = st.session_state.get("proposal")
+    stepper(
+        steps=("Describe task", "Preview changes", "Review & apply"),
+        current=1 if _proposal is not None else 0,
     )
 
     files = discover_python_files(repo)
@@ -296,121 +330,101 @@ if nav_selection == "Intention Matrix":
 
     # --- LEFT PANEL: The Task Controller ---
     with col_left:
+        panel_title(icon="draw", title="Describe the task", hint="Step 1 of 3")
+
         st.markdown(
-            """
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                <div style="display:flex; align-items:center; gap:6px;">
-                    <span class="material-symbols-outlined" style="color:#2a14b4; font-size:20px;">draw</span>
-                    <span style="font-size:16px; font-weight:600; color:#131b2e;">Ask Your Digital Assistant</span>
+            """<div style="font-size:13px; font-weight:600; color:#131b2e; margin-bottom:4px;">Which file are we working on?</div>""",
+            unsafe_allow_html=True,
+        )
+        target = st.selectbox(
+            "Target file",
+            files or ["(no .py files found)"],
+            label_visibility="collapsed",
+        )
+        st.caption("Discovered automatically from your active project folder.")
+
+        st.markdown(
+            """<div style="font-size:13px; font-weight:600; color:#131b2e; margin-top:12px; margin-bottom:4px;">What would you like me to do?</div>""",
+            unsafe_allow_html=True,
+        )
+        task = st.text_area(
+            "Task prompt",
+            value="Add a friendly 5-second automatic timeout shield so customers never see a frozen loading screen if their bank partner lags.",
+            height=110,
+            label_visibility="collapsed",
+        )
+        st.caption(f"{len(task)} characters · Shift + Return to execute")
+
+        # Intent Grounding Card (steered by sidebar guardrails)
+        matched = bank.search(task, top_k=5) if task.strip() else []
+        if not st.session_state.get("guard_safe", True):
+            matched = [
+                m for m in matched
+                if (m.category or "").lower()
+                not in ("error handling", "safety", "security")
+            ]
+        if not st.session_state.get("guard_refine", True):
+            matched = [
+                m for m in matched
+                if (m.category or "").lower()
+                not in ("style", "typing", "formatting", "testing")
+            ]
+        matched = matched[:3]
+        if matched:
+            names = "; ".join(f'"{m.latent_invariant[:80]}"' for m in matched)
+            match_summary = f"Hebitus detected that your request directly matches active habit(s): <strong style='color:#2a14b4;'>{html.escape(names)}</strong>. Formulating defensive wrapper."
+        else:
+            match_summary = "No active habit matches; proposal will follow task instructions directly. Mine history in Habits to grow library."
+
+        st.markdown(
+            f"""
+            <div class="mimir-card-tinted">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <span class="material-symbols-outlined" style="color:#2a14b4; font-size:18px;">psychology</span>
+                        <span style="font-size:14px; font-weight:600; color:#2a14b4;">Why Hebitus is doing this</span>
+                    </div>
+                    <span style="font-size:10px; font-weight:700; text-transform:uppercase; color:#2a14b4; background:#ffffff; padding:2px 8px; border-radius:4px;">Intent Grounding</span>
                 </div>
-                <span style="font-size:11px; background:#f2f3ff; color:#464554; padding:2px 8px; border-radius:4px; font-family:monospace;">st.columns(0)</span>
+                <div style="font-size:13px; color:#131b2e; line-height:1.45;">
+                    {match_summary}
+                </div>
+                <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
+                    <span class="mimir-tag mimir-tag-success"><span class="material-symbols-outlined" style="font-size:12px;">verified</span> Confidence: 99.8%</span>
+                    <span class="mimir-tag mimir-tag-primary"><span class="material-symbols-outlined" style="font-size:12px;">lock</span> No Data Leaks</span>
+                    <span class="mimir-tag mimir-tag-muted"><span class="material-symbols-outlined" style="font-size:12px;">shield</span> Non-Destructive AST Edit</span>
+                </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-        with st.container():
-            st.markdown(
-                """<div style="font-size:13px; font-weight:600; color:#131b2e; margin-bottom:4px;">Which file are we working on?</div>""",
-                unsafe_allow_html=True,
-            )
-            target = st.selectbox(
-                "Target file",
-                files or ["(no .py files found)"],
-                label_visibility="collapsed",
-            )
-            st.caption("Discovered automatically from your active project folder.")
-
-            st.markdown(
-                """<div style="font-size:13px; font-weight:600; color:#131b2e; margin-top:12px; margin-bottom:4px;">What would you like me to do?</div>""",
-                unsafe_allow_html=True,
-            )
-            task = st.text_area(
-                "Task prompt",
-                value="Add a friendly 5-second automatic timeout shield so customers never see a frozen loading screen if their bank partner lags.",
-                height=110,
-                label_visibility="collapsed",
-            )
-            st.caption(f"{len(task)} characters · Shift + Return to execute")
-
-            # Intent Grounding Card (steered by sidebar guardrails)
-            matched = bank.search(task, top_k=5) if task.strip() else []
-            if not st.session_state.get("guard_safe", True):
-                matched = [
-                    m for m in matched
-                    if (m.category or "").lower()
-                    not in ("error handling", "safety", "security")
-                ]
-            if not st.session_state.get("guard_refine", True):
-                matched = [
-                    m for m in matched
-                    if (m.category or "").lower()
-                    not in ("style", "typing", "formatting", "testing")
-                ]
-            matched = matched[:3]
-            match_summary = ""
-            if matched:
-                names = "; ".join(f"\"{m.latent_invariant[:80]}\"" for m in matched)
-                match_summary = f"MIMIR detected that your request directly matches active habit(s): <strong style='color:#2a14b4;'>{html.escape(names)}</strong>. Formulating defensive wrapper."
-            else:
-                match_summary = "No active habit matches; proposal will follow task instructions directly. Mine history in Habits to grow library."
-
-            st.markdown(
-                f"""
-                <div class="mimir-card-tinted">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                        <div style="display:flex; align-items:center; gap:6px;">
-                            <span class="material-symbols-outlined" style="color:#2a14b4; font-size:18px;">psychology</span>
-                            <span style="font-size:14px; font-weight:600; color:#2a14b4;">Why MIMIR is doing this</span>
-                        </div>
-                        <span style="font-size:10px; font-weight:700; text-transform:uppercase; color:#2a14b4; background:#ffffff; padding:2px 8px; border-radius:4px;">Intent Grounding</span>
-                    </div>
-                    <div style="font-size:13px; color:#131b2e; line-height:1.45;">
-                        {match_summary}
-                    </div>
-                    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
-                        <span class="mimir-tag mimir-tag-success"><span class="material-symbols-outlined" style="font-size:12px;">verified</span> Confidence: 99.8%</span>
-                        <span class="mimir-tag mimir-tag-primary"><span class="material-symbols-outlined" style="font-size:12px;">lock</span> No Data Leaks</span>
-                        <span class="mimir-tag mimir-tag-muted"><span class="material-symbols-outlined" style="font-size:12px;">shield</span> Non-Destructive AST Edit</span>
+        # Workspace Info Card
+        st.markdown(
+            f"""
+            <div style="background:#f2f3ff; border-radius:10px; padding:10px 14px; display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span class="material-symbols-outlined" style="color:#464554; font-size:18px;">folder_copy</span>
+                    <div>
+                        <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:#777586;">Context Root</div>
+                        <div style="font-size:12px; font-family:monospace; color:#131b2e;">{html.escape(repo)}</div>
                     </div>
                 </div>
-                """,
-                unsafe_allow_html=True,
-            )
+                <span style="font-size:11px; background:#eaedff; color:#464554; padding:2px 6px; border-radius:4px; font-family:monospace;">Git: Active</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-            # Workspace Info Card
-            st.markdown(
-                f"""
-                <div style="background:#f2f3ff; border-radius:10px; padding:10px 14px; display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <span class="material-symbols-outlined" style="color:#464554; font-size:18px;">folder_copy</span>
-                        <div>
-                            <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:#777586;">Context Root</div>
-                            <div style="font-size:12px; font-family:monospace; color:#131b2e;">{html.escape(repo)}</div>
-                        </div>
-                    </div>
-                    <span style="font-size:11px; background:#eaedff; color:#464554; padding:2px 6px; border-radius:4px; font-family:monospace;">Git: Active</span>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-            generate = st.button("⚡ Generate Proposed Change", type="primary")
+        generate = st.button(
+            ":material/bolt: Generate proposed change",
+            type="primary",
+            use_container_width=True,
+        )
 
     # --- RIGHT PANEL: The Change Visualizer ---
     with col_right:
-        st.markdown(
-            """
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                <div style="display:flex; align-items:center; gap:6px;">
-                    <span class="material-symbols-outlined" style="color:#2a14b4; font-size:20px;">preview</span>
-                    <span style="font-size:16px; font-weight:600; color:#131b2e;">Proposed Changes Preview</span>
-                </div>
-                <span style="font-size:11px; background:#f2f3ff; color:#464554; padding:2px 8px; border-radius:4px; font-family:monospace;">st.columns(1)</span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        panel_title(icon="preview", title="Preview changes", hint="Step 2 of 3")
 
         st.markdown(
             """
@@ -425,10 +439,11 @@ if nav_selection == "Intention Matrix":
             unsafe_allow_html=True,
         )
 
-        lens = st.radio(
-            "Visualization Lens",
+        lens = st.segmented_control(
+            "Visualization lens",
             ("Plain-English View", "Code Comparison"),
-            horizontal=True,
+            default="Plain-English View",
+            label_visibility="collapsed",
         )
 
         if generate and files and task.strip():
@@ -481,9 +496,13 @@ if nav_selection == "Intention Matrix":
 
     # --- BOTTOM FOOTER DOCK: Safe Execution Console ---
     st.markdown('<div class="mimir-dock-container">', unsafe_allow_html=True)
+    panel_title(icon="verified_user", title="Review & apply", hint="Step 3 of 3")
     dock_c1, dock_c2 = st.columns([3, 2])
     with dock_c1:
-        apply_clicked = st.button("🚀 Review & Save Changes to My Computer", type="primary")
+        apply_clicked = st.button(
+            ":material/rocket_launch: Review & save changes to my computer",
+            type="primary",
+        )
         st.markdown(
             """
             <div style="font-size:12px; color:#464554; margin-top:4px; display:flex; align-items:center; gap:4px;">
@@ -494,19 +513,21 @@ if nav_selection == "Intention Matrix":
             unsafe_allow_html=True,
         )
     with dock_c2:
-        status_box = """
-        <div style="display:flex; justify-content:flex-end; gap:8px;">
-            <div style="background:#f2f3ff; padding:6px 12px; border-radius:8px; display:inline-flex; align-items:center; gap:6px; font-size:12px; color:#131b2e; font-weight:600;">
-                <span style="width:8px; height:8px; border-radius:50%; background:#d97706; display:inline-block;"></span>
-                <span>Awaiting Your Approval</span>
-            </div>
-            <div style="background:rgba(153,239,229,0.4); padding:6px 12px; border-radius:8px; display:inline-flex; align-items:center; gap:6px; font-size:12px; color:#006f67; font-weight:600;">
-                <span class="material-symbols-outlined" style="font-size:16px;">cloud_done</span>
-                <span>Ready for Instant Deployment</span>
-            </div>
-        </div>
-        """
-        st.markdown(status_box, unsafe_allow_html=True)
+        has_proposal = (
+            st.session_state.get("proposal") is not None
+            and st.session_state["proposal"].target_file == target
+        )
+        if has_proposal:
+            dock_status = (
+                status_pill(text="Awaiting your approval", tone="warn")
+                + status_pill(text="Ready for deployment", tone="ok")
+            )
+        else:
+            dock_status = status_pill(text="No proposal yet — describe a task above", tone="muted")
+        st.markdown(
+            f'<div style="display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap;">{dock_status}</div>',
+            unsafe_allow_html=True,
+        )
 
     if apply_clicked:
         prop = st.session_state.get("proposal")
@@ -528,15 +549,15 @@ if nav_selection == "Intention Matrix":
                         actuator_res = None
 
                 if actuator_res is not None and actuator_res.tests_passed:
-                    st.success("✅ ALL TESTS PASSED SUCCESSFULLY! Real files updated safely on disk.")
+                    st.success("All tests passed successfully! Real files updated safely on disk.")
                     bank.log_action("user", "apply_accepted", target, prop.summary, "passed")
                     st.session_state.pop("proposal", None)
                 elif actuator_res is not None:
-                    st.error("❌ Tests failed — automatically rolled back to exact pre-write snapshot:")
+                    st.error("Tests failed — automatically rolled back to exact pre-write snapshot:")
                     st.code(actuator_res.test_output[-3000:], language="text")
                     bank.log_action("cobot", "apply_rolled_back", target, actuator_res.test_output[-1000:], "rolled_back")
 
-    with st.expander("🛡️ Automated Quality & Safety Checks (All 3 Pre-Flight Conditions Fulfilled)"):
+    with st.expander("Automated quality & safety checks (3 pre-flight conditions)"):
         st.markdown(
             """
             <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-top:8px;">
@@ -560,9 +581,9 @@ if nav_selection == "Intention Matrix":
 
 
 # ======================================================================
-# SCREEN 2: KNOWLEDGE VAULT (Exact Match to knowledge_vault.html)
+# SCREEN 2: KNOWLEDGE VAULT
 # ======================================================================
-elif nav_selection == "Knowledge Vault":
+elif nav_key == "vault":
     files = discover_python_files(repo, limit=500)
     total_lines = 0
     file_records = []
@@ -580,30 +601,14 @@ elif nav_selection == "Knowledge Vault":
     rules = bank.list_rules()
     active_count = sum(1 for _, en in rules if en)
 
-    # Top Section / Page Header
-    st.markdown(
-        """
-        <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:18px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-                <div>
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <h1 style="font-size:28px; font-weight:700; color:#131b2e; margin:0; letter-spacing:-0.02em;">Knowledge Vault</h1>
-                        <span style="display:inline-flex; align-items:center; gap:4px; font-size:12px; font-weight:600; padding:2px 10px; border-radius:9999px; background:rgba(153, 239, 229, 0.45); color:#006f67;">
-                            <span style="width:6px; height:6px; border-radius:50%; background:#006a63;"></span>
-                            Live Workspace Index
-                        </span>
-                    </div>
-                    <div style="font-size:13.5px; color:#464554; margin-top:3px;">
-                        Deterministic repository of project rules, indexed documentation, data schemas, and contextual boundaries.
-                    </div>
-                </div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    page_header(
+        icon="folder_open",
+        title="Knowledge Vault",
+        subtitle="Deterministic repository of project rules, indexed documentation, data schemas, and contextual boundaries.",
+        status_html=status_pill(text="Live workspace index", tone="ok"),
     )
 
-    # Search Bar & Action Buttons
+    # Toolbar row: search + actions (same pattern on every screen)
     kv_ctrl1, kv_ctrl2, kv_ctrl3 = st.columns([3, 1, 1])
     with kv_ctrl1:
         search_query = st.text_input(
@@ -612,15 +617,15 @@ elif nav_selection == "Knowledge Vault":
             label_visibility="collapsed",
         )
     with kv_ctrl2:
-        sync_clicked = st.button("🔄 Sync Local Files")
+        sync_clicked = st.button(":material/sync: Sync files", use_container_width=True)
     with kv_ctrl3:
-        upload_clicked = st.button("📄 Upload Spec")
+        upload_clicked = st.button(":material/upload_file: Upload spec", use_container_width=True)
 
     if sync_clicked:
         st.toast("Workspace index refreshed successfully!")
     if upload_clicked or st.session_state.get("upload_open", False):
         st.session_state["upload_open"] = True
-        with st.expander("Upload Reference Spec", expanded=True):
+        with st.expander("Upload reference spec", expanded=True):
             spec = st.file_uploader(
                 "Reference spec (saved into vault/)",
                 type=["md", "txt", "json", "yaml", "yml", "pdf", "png"],
@@ -638,65 +643,42 @@ elif nav_selection == "Knowledge Vault":
                 st.toast(f"Saved reference spec to vault/{spec.name}")
                 st.rerun()
 
+    # Filter row: segmented control (same pattern on every screen)
+    vault_filter = st.segmented_control(
+        "File sensitivity",
+        ["All", "High Sensitivity", "Standard"],
+        default="All",
+        label_visibility="collapsed",
+    )
+
     # 3 Metrics Row (Summary Statistics Bento)
     st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
     m1, m2, m3 = st.columns(3)
     with m1:
-        st.markdown(
-            f"""
-            <div class="mimir-metric-tile">
-                <div>
-                    <div class="mimir-metric-label">Indexed Project Files</div>
-                    <div class="mimir-metric-val">{len(file_records)}</div>
-                    <div style="font-size:12px; color:#777586; margin-top:4px;">
-                        <span class="material-symbols-outlined" style="font-size:14px; color:#006a63;">schedule</span>
-                        {total_lines:,} lines indexed • Live Workspace
-                    </div>
-                </div>
-                <div style="width:40px; height:40px; border-radius:10px; background:#f2f3ff; display:flex; align-items:center; justify-content:center; color:#2a14b4;">
-                    <span class="material-symbols-outlined" style="font-size:22px;">source_notes</span>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        metric_tile(
+            label="Indexed Project Files",
+            value=f"{len(file_records)}",
+            foot=f"{total_lines:,} lines indexed · Live workspace",
+            foot_icon="schedule",
+            icon="source_notes",
         )
     with m2:
-        st.markdown(
-            f"""
-            <div class="mimir-metric-tile">
-                <div>
-                    <div class="mimir-metric-label">Grounding Rules Active</div>
-                    <div class="mimir-metric-val">{active_count}</div>
-                    <div style="font-size:12px; color:#006a63; font-weight:600; margin-top:4px;">
-                        <span class="material-symbols-outlined" style="font-size:14px; color:#006a63;">check_circle</span>
-                        100% Enforced Invariants
-                    </div>
-                </div>
-                <div style="width:40px; height:40px; border-radius:10px; background:#f2f3ff; display:flex; align-items:center; justify-content:center; color:#006a63;">
-                    <span class="material-symbols-outlined" style="font-size:22px;">gavel</span>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        metric_tile(
+            label="Grounding Rules Active",
+            value=f"{active_count}",
+            foot="100% enforced invariants",
+            foot_icon="check_circle",
+            icon="gavel",
+            icon_color="#006a63",
         )
     with m3:
-        st.markdown(
-            """
-            <div class="mimir-metric-tile">
-                <div>
-                    <div class="mimir-metric-label">Data Privacy Boundary</div>
-                    <div style="font-size:24px; font-weight:700; color:#131b2e; margin-top:2px;">Tier 1 Compliance</div>
-                    <div style="font-size:12px; color:#777586; margin-top:4px;">
-                        <span class="material-symbols-outlined" style="font-size:14px; color:#006a63;">security</span>
-                        Strict PII Masking • Zero outbound egress
-                    </div>
-                </div>
-                <div style="width:40px; height:40px; border-radius:10px; background:#f2f3ff; display:flex; align-items:center; justify-content:center; color:#5c2f00;">
-                    <span class="material-symbols-outlined" style="font-size:22px;">verified_user</span>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        metric_tile(
+            label="Data Privacy Boundary",
+            value='<span style="font-size:24px;">Tier 1 Compliance</span>',
+            foot="Strict PII masking · Zero outbound egress",
+            foot_icon="security",
+            icon="verified_user",
+            icon_color="#5c2f00",
         )
 
     # Main Multi-Column Section (60% Left, 40% Right)
@@ -707,21 +689,12 @@ elif nav_selection == "Knowledge Vault":
         st.markdown(
             """
             <div class="mimir-card">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                    <div>
-                        <div style="font-size:16px; font-weight:600; color:#131b2e;">Project Context & Verified Documentation</div>
-                        <div style="font-size:12px; color:#777586;">Validated artifacts anchoring all model responses</div>
-                    </div>
+                <div style="margin-bottom:12px;">
+                    <div style="font-size:16px; font-weight:600; color:#131b2e;">Project Context & Verified Documentation</div>
+                    <div style="font-size:12px; color:#777586;">Validated artifacts anchoring all model responses</div>
                 </div>
             """,
             unsafe_allow_html=True,
-        )
-
-        vault_filter = st.segmented_control(
-            "File sensitivity",
-            ["All", "High Sensitivity", "Standard"],
-            default="All",
-            label_visibility="collapsed",
         )
 
         def _is_sensitive(path: str) -> bool:
@@ -763,7 +736,7 @@ elif nav_selection == "Knowledge Vault":
                     """,
                     unsafe_allow_html=True,
                 )
-                with st.expander(f"View Snippet: {fpath}"):
+                with st.expander(f"View snippet: {fpath}"):
                     full_p = os.path.join(repo, fpath)
                     try:
                         with open(full_p, encoding="utf-8", errors="replace") as f:
@@ -772,7 +745,7 @@ elif nav_selection == "Knowledge Vault":
                     except Exception as err:
                         st.caption(f"Could not load: {err}")
         else:
-            st.caption("No matching files found.")
+            st.info("No matching files found.")
         st.markdown("</div>", unsafe_allow_html=True)
 
     with kv_right:
@@ -848,58 +821,34 @@ elif nav_selection == "Knowledge Vault":
 
 
 # ======================================================================
-# SCREEN 3: ASSISTING HABITS & SAFEGUARDS (Exact Match to habits_safeguards.html)
+# SCREEN 3: ASSISTING HABITS & SAFEGUARDS
 # ======================================================================
-elif nav_selection == "Assisting Habits":
+elif nav_key == "habits":
     rules = bank.list_rules()
     active_count = sum(1 for _, en in rules if en)
 
-    # Top Section / Page Header with Quick Telemetry Card
-    st.markdown(
-        """
-        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:18px; flex-wrap:wrap; gap:16px;">
-            <div style="max-width:760px;">
-                <h1 style="font-size:28px; font-weight:700; color:#131b2e; margin:0; letter-spacing:-0.02em;">
-                    Assisting Habits & Automated Safeguards
-                </h1>
-                <div style="font-size:14px; color:#464554; margin-top:4px; line-height:1.45;">
-                    Fine-tune how MIMIR monitors your work, suggests proactive fixes, and protects customer experience without technical jargon.
-                </div>
-            </div>
-            <div style="display:flex; align-items:center; gap:16px; background:#ffffff; padding:12px 18px; border-radius:12px; border:1px solid #dae2fd; box-shadow:0 1px 4px rgba(0,0,0,0.03);">
-                <div>
-                    <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:#777586;">Defended Events</div>
-                    <div style="display:flex; align-items:baseline; gap:6px; margin-top:2px;">
-                        <span style="font-size:22px; font-weight:700; color:#2a14b4;">14,291</span>
-                        <span style="font-size:11px; font-weight:600; color:#006a63;">↑ 18%</span>
-                    </div>
-                    <div style="font-size:10.5px; color:#777586;">Last 30 rolling days</div>
-                </div>
-                <div style="height:36px; width:1px; background:#eaedff;"></div>
-                <div>
-                    <div style="font-size:10px; font-weight:700; text-transform:uppercase; color:#777586;">Intervention Rate</div>
-                    <div style="display:flex; align-items:baseline; gap:6px; margin-top:2px;">
-                        <span style="font-size:22px; font-weight:700; color:#006a63;">99.98%</span>
-                        <span style="font-size:11px; color:#777586;">Clean</span>
-                    </div>
-                    <div style="font-size:10.5px; color:#777586;">Zero uncaught crashes</div>
-                </div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    page_header(
+        icon="tune",
+        title="Assisting Habits & Automated Safeguards",
+        subtitle="Fine-tune how Hebitus monitors your work, suggests proactive fixes, and protects customer experience.",
+        status_html=(
+            '<div style="display:flex; align-items:center; gap:16px; background:#ffffff; padding:10px 18px; border-radius:12px; border:1px solid #dae2fd;">'
+            '<div><div style="font-size:10px; font-weight:700; text-transform:uppercase; color:#777586;">Defended Events</div>'
+            '<div style="display:flex; align-items:baseline; gap:6px; margin-top:2px;">'
+            '<span style="font-size:22px; font-weight:700; color:#2a14b4;">14,291</span>'
+            '<span style="font-size:11px; font-weight:600; color:#006a63;">↑ 18%</span></div>'
+            '<div style="font-size:10.5px; color:#777586;">Last 30 rolling days</div></div>'
+            '<div style="height:36px; width:1px; background:#eaedff;"></div>'
+            '<div><div style="font-size:10px; font-weight:700; text-transform:uppercase; color:#777586;">Intervention Rate</div>'
+            '<div style="display:flex; align-items:baseline; gap:6px; margin-top:2px;">'
+            '<span style="font-size:22px; font-weight:700; color:#006a63;">99.98%</span>'
+            '<span style="font-size:11px; color:#777586;">Clean</span></div>'
+            '<div style="font-size:10.5px; color:#777586;">Zero uncaught crashes</div></div>'
+            "</div>"
+        ),
     )
 
-    # Search & Filter Ribbon + Action Button
-    habit_category = st.segmented_control(
-        "Habit category",
-        ["All", "Reliability", "Safety & Isolation", "Formatting & Tone",
-         "Privacy & Redaction"],
-        default="All",
-        label_visibility="collapsed",
-    )
-    st.caption(f"{len(rules)} safeguard(s) in the Principle Bank")
-
+    # Toolbar row: search + action (same pattern on every screen)
     col_mine1, col_mine2 = st.columns([3, 1])
     with col_mine1:
         habit_search = st.text_input(
@@ -908,7 +857,21 @@ elif nav_selection == "Assisting Habits":
             label_visibility="collapsed",
         )
     with col_mine2:
-        mine_btn = st.button("🔄 Mine History (`git log -p`)", type="primary")
+        mine_btn = st.button(
+            ":material/history: Mine history (git log -p)",
+            type="primary",
+            use_container_width=True,
+        )
+
+    # Filter row: segmented control (same pattern on every screen)
+    habit_category = st.segmented_control(
+        "Habit category",
+        ["All", "Reliability", "Safety & Isolation", "Formatting & Tone",
+         "Privacy & Redaction"],
+        default="All",
+        label_visibility="collapsed",
+    )
+    st.caption(f"{len(rules)} safeguard(s) in the Principle Bank")
 
     if mine_btn:
         with st.spinner("Mining invariant micro-deltas via git log -p..."):
@@ -947,7 +910,11 @@ elif nav_selection == "Assisting Habits":
             or needle in (p.name or "").lower()
         ]
     if not rules:
-        st.info("No habits learned yet. Click 'Mine History' above to extract rules from your git commit micro-deltas!")
+        empty_state(
+            icon="tune",
+            title="No habits learned yet",
+            body="Click 'Mine history' above to extract rules from your git commit micro-deltas.",
+        )
     elif not visible:
         st.info("No safeguards match the current filter.")
     else:
@@ -961,33 +928,23 @@ elif nav_selection == "Assisting Habits":
 
 
 # ======================================================================
-# SCREEN 4: AUDIT TRACE LEDGER (Exact Match to audit_trace_ledger.html)
+# SCREEN 4: AUDIT TRACE LEDGER
 # ======================================================================
-elif nav_selection == "Audit Trace Ledger":
+elif nav_key == "audit":
     actions = bank.list_actions(limit=50)
     passed_count = sum(1 for a in actions if a.status == "passed")
     rolled_back_count = sum(1 for a in actions if a.status == "rolled_back")
     blocked_count = sum(1 for a in actions if a.status == "blocked")
 
-    # Top Section / Page Header
-    st.markdown(
-        """
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-            <div>
-                <h1 style="font-size:28px; font-weight:700; color:#131b2e; margin:0; letter-spacing:-0.02em;">
-                    Audit Trace & Verification Ledger
-                </h1>
-                <div style="font-size:14px; color:#464554; margin-top:4px;">
-                    Chronological audit trail of all cobot actions, AST checks, atomic writes, and automated test verdicts.
-                </div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    page_header(
+        icon="history_edu",
+        title="Audit Trace & Verification Ledger",
+        subtitle="Chronological audit trail of all cobot actions, AST checks, atomic writes, and automated test verdicts.",
+        status_html=status_pill(text=f"{len(actions)} events recorded", tone="info"),
     )
 
-    # Search Bar with Severity Filter
-    atl_c1, atl_c2, atl_c3 = st.columns([3, 1, 1])
+    # Toolbar row: search + action (same pattern on every screen)
+    atl_c1, atl_c2 = st.columns([3, 1])
     with atl_c1:
         audit_search = st.text_input(
             "Audit Search",
@@ -995,21 +952,23 @@ elif nav_selection == "Audit Trace Ledger":
             label_visibility="collapsed",
         )
     with atl_c2:
-        severity_filter = st.selectbox(
-            "Severity",
-            ("All Thresholds", "Critical Only", "Rollback Operations"),
-            label_visibility="collapsed",
-        )
-    with atl_c3:
-        refresh_audit = st.button("🔄 Refresh Feed")
+        refresh_audit = st.button(":material/refresh: Refresh feed", use_container_width=True)
 
     if refresh_audit:
         st.rerun()
 
+    # Filter row: segmented control (same pattern on every screen)
+    severity_filter = st.segmented_control(
+        "Severity",
+        ("All", "Critical only", "Rollbacks"),
+        default="All",
+        label_visibility="collapsed",
+    )
+
     records = actions
-    if severity_filter == "Critical Only":
+    if severity_filter == "Critical only":
         records = [a for a in records if a.status == "blocked"]
-    elif severity_filter == "Rollback Operations":
+    elif severity_filter == "Rollbacks":
         records = [a for a in records if a.status == "rolled_back"]
     if audit_search.strip():
         needle = audit_search.strip().lower()
@@ -1025,78 +984,39 @@ elif nav_selection == "Audit Trace Ledger":
     st.markdown("<div style='margin-top:10px;'></div>", unsafe_allow_html=True)
     a1, a2, a3 = st.columns(3)
     with a1:
-        st.markdown(
-            f"""
-            <div class="mimir-metric-tile">
-                <div>
-                    <div class="mimir-metric-label">Total Interventions</div>
-                    <div class="mimir-metric-val">{len(actions)}</div>
-                    <div style="font-size:12px; color:#006a63; font-weight:600; margin-top:4px;">
-                        <span class="material-symbols-outlined" style="font-size:14px; color:#006a63;">undo</span>
-                        100% Reversible Memory Snapshot
-                    </div>
-                </div>
-                <div style="width:40px; height:40px; border-radius:10px; background:#f2f3ff; display:flex; align-items:center; justify-content:center; color:#2a14b4;">
-                    <span class="material-symbols-outlined" style="font-size:22px;">history</span>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        metric_tile(
+            label="Total Interventions",
+            value=f"{len(actions)}",
+            foot="100% reversible memory snapshots",
+            foot_icon="undo",
+            icon="history",
         )
     with a2:
         approval_pct = (passed_count / len(actions) * 100) if actions else 100.0
-        st.markdown(
-            f"""
-            <div class="mimir-metric-tile">
-                <div>
-                    <div class="mimir-metric-label">Human Approval Rate</div>
-                    <div class="mimir-metric-val">{approval_pct:.1f}%</div>
-                    <div style="font-size:12px; color:#777586; margin-top:4px;">
-                        <span class="material-symbols-outlined" style="font-size:14px; color:#006a63;">how_to_reg</span>
-                        {passed_count} / {len(actions)} Direct User Consents
-                    </div>
-                </div>
-                <div style="width:40px; height:40px; border-radius:10px; background:rgba(153,239,229,0.4); display:flex; align-items:center; justify-content:center; color:#006a63;">
-                    <span class="material-symbols-outlined" style="font-size:22px;">how_to_reg</span>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        metric_tile(
+            label="Human Approval Rate",
+            value=f"{approval_pct:.1f}%",
+            foot=f"{passed_count} / {len(actions)} direct user consents",
+            foot_icon="how_to_reg",
+            icon="how_to_reg",
+            icon_color="#006a63",
         )
     with a3:
-        st.markdown(
-            """
-            <div class="mimir-metric-tile">
-                <div>
-                    <div class="mimir-metric-label">Current Safety Ledger</div>
-                    <div style="font-size:24px; font-weight:700; color:#131b2e; margin-top:2px;">Zero Drift</div>
-                    <div style="font-size:12px; color:#777586; margin-top:4px;">
-                        <span class="material-symbols-outlined" style="font-size:14px; color:#006a63;">verified_user</span>
-                        Synced • Invariant Boundaries Clean
-                    </div>
-                </div>
-                <div style="width:40px; height:40px; border-radius:10px; background:#f2f3ff; display:flex; align-items:center; justify-content:center; color:#2a14b4;">
-                    <span class="material-symbols-outlined" style="font-size:22px;">verified_user</span>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        metric_tile(
+            label="Current Safety Ledger",
+            value='<span style="font-size:24px;">Zero Drift</span>',
+            foot=f"Synced · {blocked_count} blocked · {rolled_back_count} rolled back",
+            foot_icon="verified_user",
+            icon="verified_user",
         )
 
     # Chronological Audit Feed
     st.markdown("<div style='margin-top:16px;'></div>", unsafe_allow_html=True)
     if not actions:
-        st.markdown(
-            """
-            <div class="mimir-card" style="text-align:center; padding:32px; color:#464554;">
-                <span class="material-symbols-outlined" style="font-size:36px; color:#4338ca; display:block; margin-bottom:8px;">history_edu</span>
-                <div style="font-size:15px; font-weight:600; color:#131b2e;">No Audit Events Yet</div>
-                <div style="font-size:13px; color:#777586; margin-top:4px;">
-                    Apply a proposed change in the Intention Studio to record verified transactional events.
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        empty_state(
+            icon="history_edu",
+            title="No audit events yet",
+            body="Apply a proposed change in the Intention Studio to record verified transactional events.",
         )
     elif not records:
         st.info("No audit events match the current search / severity filter.")
@@ -1136,3 +1056,4 @@ elif nav_selection == "Audit Trace Ledger":
                 """,
                 unsafe_allow_html=True,
             )
+

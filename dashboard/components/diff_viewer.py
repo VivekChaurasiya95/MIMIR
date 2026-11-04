@@ -14,9 +14,9 @@ def render_diff(unified_diff: str, *, filename: str = "") -> None:
     if not unified_diff.strip():
         st.markdown(
             """
-            <div style="background:#ffffff; border:1px dashed #c7c4d7; border-radius:8px; padding:1.5rem; text-align:center; color:#464554; font-size:13px;">
+            <div style="background:#ffffff; border:1px dashed #c7c4d7; border-radius:12px; padding:1.5rem; text-align:center; color:#464554; font-size:13px;">
                 <span class="material-symbols-outlined" style="font-size:24px; color:#4338ca; display:block; margin-bottom:4px;">preview</span>
-                No changes proposed yet. Describe a task on the left and click <strong>Generate Proposed Change</strong>.
+                No changes proposed yet. Describe a task on the left and click <strong>Generate proposed change</strong>.
             </div>
             """,
             unsafe_allow_html=True,

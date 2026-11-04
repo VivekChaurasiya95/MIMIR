@@ -1,4 +1,4 @@
-"""Institutional Assurance theme for the MIMIR Control Tower.
+"""Institutional Assurance theme for the Hebitus Control Tower.
 
 Exact styling tokens and layout overrides matching the design mockups in
 `desktop_app/assets/ui/*`:
@@ -140,11 +140,16 @@ def inject_theme() -> None:
             border-color: #4338ca !important;
             transform: scale(1.05) !important;
         }
+        /* Keep the collapse control above the pulled-up brand row. */
+        div[data-testid="stSidebarCollapseButton"] {
+            position: relative;
+            z-index: 2;
+        }
 
-        /* Sidebar Styling */
+        /* Sidebar Styling: clean white rail, neutral hairline */
         section[data-testid="stSidebar"] {
-            background-color: #f2f3ff !important;
-            border-right: 1px solid #dae2fd !important;
+            background-color: #ffffff !important;
+            border-right: 1px solid #e9e9ee !important;
             transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), width 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
         }
         section[data-testid="stSidebar"][aria-expanded="true"] {
@@ -179,16 +184,6 @@ def inject_theme() -> None:
             display: flex;
             align-items: center;
             gap: 0.75rem;
-        }
-        .mimir-logo-icon {
-            width: 32px;
-            height: 32px;
-            border-radius: 8px;
-            background: #4338ca;
-            color: #ffffff;
-            display: flex;
-            align-items: center;
-            justify-content: center;
         }
         .mimir-brand-title {
             font-size: 18px;
@@ -230,45 +225,186 @@ def inject_theme() -> None:
             50% { opacity: 0.4; transform: scale(1.15); }
         }
 
-        /* Sidebar Navigation: Transform Radio into Menu Pills */
-        div[data-testid="stRadio"] div[role="radiogroup"] {
-            display: flex !important;
-            flex-direction: column !important;
-            gap: 4px !important;
+        /* ============ Sidebar brand ============ */
+        .mimir-side-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            /* Share the top header line with the collapse button; the
+               right margin keeps the brand clear of the button. */
+            margin: -44px 36px 12px 2px;
+            padding: 0;
+            position: relative;
+            z-index: 1;
+            max-width: 100%;
         }
-        div[data-testid="stRadio"] div[role="radiogroup"] > label {
+        .mimir-side-brand img,
+        .mimir-brand-cluster img {
+            display: block;
+            flex-shrink: 0;
+        }
+        .mimir-side-brandname {
+            font-size: 16px;
+            font-weight: 800;
+            color: #101014;
+            letter-spacing: 0.04em;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            min-width: 0;
+        }
+        .mimir-side-div {
+            border-top: 1px solid #eeeef1;
+            margin: 16px 2px 0 2px;
+        }
+        .mimir-side-statusrow {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 2px 6px 2px;
+        }
+        .mimir-side-ver {
+            font-size: 11.5px;
+            font-weight: 600;
+            color: #9a9aa3;
+        }
+
+        /* ============ Sidebar tabs: buttons styled as a tab rail ============
+           Real <button> elements (never a radio), so no option circles can
+           exist. Active tab = quiet gray pill + dark semibold text. */
+        section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] {
+            gap: 0.4rem !important;
+        }
+        section[data-testid="stSidebar"] div[data-testid="stButton"] > button {
+            width: 100% !important;
+            min-height: 40px !important;
             display: flex !important;
             align-items: center !important;
+            justify-content: flex-start !important;
+            text-align: left !important;
             padding: 8px 12px !important;
+            margin: 0 !important;
             border-radius: 8px !important;
             background: transparent !important;
-            margin: 0 !important;
-            transition: all 0.15s ease !important;
+            border: 1px solid transparent !important;
+            box-shadow: none !important;
             cursor: pointer !important;
-            color: #464554 !important;
+            color: #23262b !important;
+            font-size: 14px !important;
+            font-weight: 500 !important;
+            transition: background 0.15s ease, color 0.15s ease !important;
+            transform: none !important;
+        }
+        section[data-testid="stSidebar"] div[data-testid="stButton"] > button:hover {
+            background: #f4f4f6 !important;
+            border-color: transparent !important;
+            color: #101014 !important;
+            box-shadow: none !important;
+            transform: none !important;
+        }
+        section[data-testid="stSidebar"] div[data-testid="stButton"] > button:active {
+            transform: none !important;
+        }
+        section[data-testid="stSidebar"] div[data-testid="stButton"] > button[kind="primary"] {
+            background: #ececef !important;
+            border-color: #ececef !important;
+            color: #101014 !important;
+            font-weight: 600 !important;
+            box-shadow: none !important;
+        }
+        section[data-testid="stSidebar"] div[data-testid="stButton"] > button[kind="primary"]:hover {
+            background: #e2e2e7 !important;
+            border-color: #e2e2e7 !important;
+            color: #101014 !important;
+        }
+        /* Tab content: icon + label on one truncated line */
+        section[data-testid="stSidebar"] div[data-testid="stButton"] button [data-testid="stMarkdownContainer"],
+        section[data-testid="stSidebar"] div[data-testid="stButton"] button p {
+            display: flex !important;
+            align-items: center !important;
+            gap: 10px !important;
+            margin: 0 !important;
+            width: 100% !important;
+            min-width: 0 !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            white-space: nowrap !important;
+            font-size: 14px !important;
+            color: inherit !important;
+        }
+        section[data-testid="stSidebar"] div[data-testid="stButton"] .material-symbols-outlined {
+            font-size: 20px !important;
+            font-weight: 300 !important;
+            flex-shrink: 0 !important;
+            color: inherit !important;
+        }
+        section[data-testid="stSidebar"] div[data-testid="stButton"] > button:focus-visible {
+            outline: 2px solid #2a14b4 !important;
+            outline-offset: 1px !important;
+        }
+
+        /* ============ Sidebar form controls ============ */
+        section[data-testid="stSidebar"] div[data-testid="stTextInput"] input {
+            background-color: #ffffff !important;
+            border: 1px solid #d9d9de !important;
+            border-radius: 8px !important;
+            font-size: 12.5px !important;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important;
+        }
+        section[data-testid="stSidebar"] div[data-testid="stTextInput"] input:focus {
+            background-color: #ffffff !important;
+            border-color: #2a14b4 !important;
+            box-shadow: 0 0 0 2px rgba(42, 20, 180, 0.12) !important;
+        }
+        section[data-testid="stSidebar"] div[data-testid="stTextInput"] label p {
+            font-size: 13px !important;
+            font-weight: 600 !important;
+            color: #23262b !important;
+        }
+        /* Toggle rows: label left, switch right, description tucked below. */
+        section[data-testid="stSidebar"] div[data-testid="stToggle"] {
+            padding: 7px 2px 0 2px !important;
+            margin: 0 !important;
+        }
+        section[data-testid="stSidebar"] div[data-testid="stToggle"] > label {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            width: 100% !important;
+            gap: 12px !important;
+        }
+        section[data-testid="stSidebar"] div[data-testid="stToggle"] > label > div:has(p) {
+            order: 1 !important;
+            flex: 1 1 auto !important;
+            min-width: 0 !important;
+        }
+        section[data-testid="stSidebar"] div[data-testid="stToggle"] > label > div:not(:has(p)) {
+            order: 2 !important;
+            flex-shrink: 0 !important;
+        }
+        section[data-testid="stSidebar"] div[data-testid="stToggle"] label p {
             font-size: 13.5px !important;
             font-weight: 500 !important;
+            color: #23262b !important;
         }
-        div[data-testid="stRadio"] div[role="radiogroup"] > label:hover {
-            background: #eaedff !important;
-            color: #131b2e !important;
+        section[data-testid="stSidebar"] div[data-testid="stCaptionContainer"] {
+            margin-top: -0.3rem !important;
+            padding: 0 2px 0.3rem 2px !important;
         }
-        /* Hide native circular radio button dot */
-        div[data-testid="stRadio"] div[role="radiogroup"] > label > div:first-child {
-            display: none !important;
+        section[data-testid="stSidebar"] div[data-testid="stCaptionContainer"] p {
+            font-size: 11.5px !important;
+            color: #84848d !important;
         }
-        div[data-testid="stRadio"] div[role="radiogroup"] > label > div:last-child {
-            width: 100% !important;
+        /* Compact health-details expander */
+        section[data-testid="stSidebar"] div[data-testid="stExpander"] details {
+            background: #ffffff !important;
+            border: 1px solid #e4e4e9 !important;
+            border-radius: 8px !important;
+            box-shadow: none !important;
         }
-        /* Active Radio Menu Item */
-        div[data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) {
-            background: #4338ca !important;
-            color: #ffffff !important;
+        section[data-testid="stSidebar"] div[data-testid="stExpander"] summary p {
+            font-size: 12.5px !important;
             font-weight: 600 !important;
-            box-shadow: 0 1px 4px rgba(67, 56, 202, 0.25) !important;
-        }
-        div[data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) * {
-            color: #ffffff !important;
         }
 
         /* Custom Cards & Containers */
@@ -279,14 +415,6 @@ def inject_theme() -> None:
             box-shadow: 0 1px 4px rgba(0,0,0,0.03);
             margin-bottom: 1rem;
             border: 1px solid rgba(218, 226, 253, 0.6);
-        }
-        .mimir-sidebar-card {
-            background: #ffffff;
-            border-radius: 12px;
-            padding: 0.85rem 1rem;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.03);
-            margin-bottom: 1rem;
-            border: 1px solid rgba(218, 226, 253, 0.5);
         }
         .mimir-card-tinted {
             background: rgba(227, 223, 255, 0.35);
@@ -458,6 +586,226 @@ def inject_theme() -> None:
             box-shadow: 0 1px 6px rgba(0,0,0,0.04);
             border: 1px solid #dae2fd;
             margin-top: 1.5rem;
+        }
+
+        /* ============ Consistent page + panel headers ============ */
+        .mimir-page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-bottom: 18px;
+        }
+        .mimir-page-heading {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            min-width: 0;
+        }
+        .mimir-page-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            background: #2a14b4;
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+        .mimir-page-title {
+            font-size: 24px !important;
+            font-weight: 700 !important;
+            color: #131b2e !important;
+            margin: 0 !important;
+            letter-spacing: -0.02em;
+            line-height: 1.2 !important;
+            padding: 0 !important;
+        }
+        .mimir-page-subtitle {
+            font-size: 13.5px;
+            color: #464554;
+            margin-top: 3px;
+            line-height: 1.45;
+        }
+        .mimir-page-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            padding-top: 4px;
+        }
+        .mimir-panel-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .mimir-panel-name {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            font-size: 16px;
+            font-weight: 600;
+            color: #131b2e;
+        }
+        .mimir-panel-icon {
+            color: #2a14b4 !important;
+            font-size: 20px !important;
+        }
+        .mimir-panel-hint {
+            font-size: 11px;
+            font-weight: 500;
+            background: #f2f3ff;
+            color: #464554;
+            padding: 2px 8px;
+            border-radius: 4px;
+            white-space: nowrap;
+        }
+
+        /* ============ Workflow stepper ============ */
+        .mimir-stepper {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #ffffff;
+            border: 1px solid rgba(218, 226, 253, 0.7);
+            border-radius: 10px;
+            padding: 10px 16px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+        .mimir-step {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #777586;
+            white-space: nowrap;
+        }
+        .mimir-step-num {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 700;
+            background: #eaedff;
+            color: #464554;
+        }
+        .mimir-step-now { color: #2a14b4; }
+        .mimir-step-now .mimir-step-num { background: #2a14b4; color: #ffffff; }
+        .mimir-step-done { color: #006a63; }
+        .mimir-step-done .mimir-step-num { background: rgba(153, 239, 229, 0.6); color: #006a63; }
+        .mimir-step-line {
+            flex: 1 1 24px;
+            min-width: 16px;
+            max-width: 64px;
+            height: 2px;
+            border-radius: 2px;
+            background: #eaedff;
+        }
+
+        /* ============ Sidebar sections ============ */
+        .mimir-side-title {
+            font-size: 11px !important;
+            font-weight: 600 !important;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #84848d !important;
+            margin: 12px 0 4px 2px !important;
+            padding: 0 !important;
+        }
+        .mimir-side-card {
+            background: #ffffff;
+            border: 1px solid #e4e4e9;
+            border-radius: 10px;
+            padding: 10px 12px;
+            margin-bottom: 4px;
+        }
+
+        /* ============ Status pills (shared tones) ============ */
+        .mimir-status-ok { background: rgba(153, 239, 229, 0.4) !important; color: #006f67 !important; }
+        .mimir-status-warn { background: #ffdcc3 !important; color: #7d4200 !important; }
+        .mimir-status-info { background: #eaedff !important; color: #4338ca !important; }
+        .mimir-status-danger { background: #ffdad6 !important; color: #ba1a1a !important; }
+        .mimir-status-muted { background: #f2f3ff !important; color: #464554 !important; }
+        .mimir-status-ok .mimir-status-dot { background: #006a63; }
+        .mimir-status-warn .mimir-status-dot { background: #d97706; }
+        .mimir-status-info .mimir-status-dot { background: #4338ca; }
+        .mimir-status-danger .mimir-status-dot { background: #ba1a1a; }
+        .mimir-status-muted .mimir-status-dot { background: #777586; }
+        .mimir-status-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            display: inline-block;
+            flex-shrink: 0;
+        }
+
+        /* ============ Metric tile footer + icon ============ */
+        .mimir-metric-foot {
+            font-size: 12px;
+            color: #777586;
+            margin-top: 4px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .mimir-metric-ico {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            background: #f2f3ff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        /* ============ Empty states ============ */
+        .mimir-empty {
+            text-align: center;
+            padding: 32px 24px !important;
+            color: #464554;
+        }
+        .mimir-empty-icon {
+            font-size: 36px !important;
+            color: #4338ca !important;
+            display: block;
+            margin-bottom: 8px;
+        }
+        .mimir-empty-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #131b2e;
+        }
+        .mimir-empty-body {
+            font-size: 13px;
+            color: #777586;
+            margin-top: 4px;
+            line-height: 1.5;
+        }
+
+        /* ============ Filter/tool rows + segmented consistency ============ */
+        div[data-testid="stSegmentedControl"] {
+            margin-bottom: 8px;
+        }
+        div[data-testid="stExpander"] details {
+            border: 1px solid rgba(218, 226, 253, 0.6) !important;
+            border-radius: 10px !important;
+            background: #ffffff !important;
+        }
+        div[data-testid="stExpander"] summary p {
+            font-size: 13.5px !important;
+            font-weight: 600 !important;
+            color: #131b2e !important;
         }
         </style>
         """,

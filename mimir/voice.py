@@ -1342,4 +1342,3 @@ def _play_audio_headless(path: str) -> "threading.Thread":
     thread = threading.Thread(target=_worker, daemon=True)
     thread.start()
     return thread
-
